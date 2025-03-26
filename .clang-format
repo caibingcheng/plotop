@@ -1,0 +1,8 @@
+Language: Cpp
+IndentWidth: 2
+AccessModifierOffset: -1
+UseTab: Never
+UseCRLF: false
+ColumnLimit: 120
+MaxEmptyLinesToKeep: 1
+SpacesBeforeTrailingComments: 2

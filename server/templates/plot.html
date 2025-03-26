@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Plot Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <script type="text/javascript">
+        document.addEventListener("DOMContentLoaded", function () {
+            var socket = io.connect('http://' + document.domain + ':' + location.port);
+            var ip = "{{ ip }}";
+            socket.emit('subscribe', { ip: ip });
+            socket.on('new_data/' + ip, function (data) {
+                var dataList = data.data;
+                var index = data.index;
+                var content = document.getElementById("content");
+                content.innerHTML += index + ':' + JSON.stringify(dataList, null, 2) + '\n';
+                var datetime = new Date();
+                console.log(datetime.toISOString() + ' ' + index);
+                // keep alive
+                socket.emit('subscribe', { ip: ip });
+            });
+            socket.on('clear/' + ip, function () {
+                var content = document.getElementById("content");
+                content.innerHTML = '';
+            });
+        });
+    </script>
+</head>
+
+<body>
+    <pre id="content"></pre>
+</body>
+
+</html>
