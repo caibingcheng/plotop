@@ -1,6 +1,7 @@
 #include <cstdint>
-#include <string>
 #include <list>
+#include <string>
+#include <thread>
 
 #include "cmdline.h"
 #include "internval.h"
@@ -18,26 +19,28 @@ struct Arguments {
 int32_t main(int32_t argc, char **argv) {
   Arguments args;
   Cmdline cmdline;
-  cmdline.add_argument("address", args.address, "127.0.0.1");
-  cmdline.add_argument("port", args.port, 8080);
-  cmdline.add_argument("level", args.level, 2);
-  cmdline.add_argument("duration", args.duration, 3000);
-  cmdline.add_argument("pattern", args.patterns, {"^.*$"});
+  cmdline.add_argument('i', "ip", args.address, "127.0.0.1");
+  cmdline.add_argument('p', "port", args.port, 8001);
+  cmdline.add_argument('l', "level", args.level, 2);
+  cmdline.add_argument('d', "duration", args.duration, 3);
+  cmdline.add_argument('P', "pattern", args.patterns);
   cmdline.parse(argc, argv);
   Log::set_level(static_cast<Log::Level>(args.level));
 
-  Stats stats;
-  Packet packet;
-  Network network(args.address, args.port);
-  if (!network.ready()) {
-    return 1;
-  }
+  do {
+    std::unique_ptr<Packet> packet(new Packet());
+    std::unique_ptr<Network> network(new Network(args.address, args.port));
+    if (network->ready()) {
+      Interval interval(args.duration, [&]() {
+        Stats stats;
+        packet->collate(stats, args.patterns);
+        network->send(packet->to_json(stats));
+      });
 
-  Interval interval(args.duration, [&]() {
-    packet.collate(stats, args.patterns);
-    network.send(packet.to_json(stats));
-  });
+      interval.wait();
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  } while (true);
 
-  interval.wait();
   return 0;
 }

@@ -11,6 +11,7 @@
 
 struct Thread {
   int32_t tid;
+  int64_t priority;
   uint64_t cpu_user;
   uint64_t cpu_system;
 };
@@ -37,6 +38,7 @@ struct Stats {
 
 inline Jsonify &to_jsonify(Jsonify &jsonify, const Thread &thread) {
   jsonify["tid"] = thread.tid;
+  jsonify["priority"] = thread.priority;
   jsonify["cpu_user"] = thread.cpu_user;
   jsonify["cpu_system"] = thread.cpu_system;
   return jsonify;

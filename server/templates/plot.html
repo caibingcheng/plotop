@@ -9,32 +9,954 @@
             font-family: Arial, sans-serif;
             margin: 20px;
         }
+
+        canvas {
+            border: 1px solid #ccc;
+            width: 100%;
+            /* 设置满宽 */
+            height: calc(100vh / 3);
+            /* 设置高度为屏幕高度的1/3 */
+        }
+
+        table {
+            margin-bottom: 3rem;
+        }
+
+        #config {
+            position: fixed;
+            top: 0px;
+            width: 100%;
+            background-color: #f8f8f8;
+            padding: 5px;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/system_memory.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 确保 Chart.js 在前 -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script> <!-- 确保适配器在后 -->
     <script type="text/javascript">
+        function getStepSize(duration) {
+            if (duration <= 10) return 1; // 10s -> 1s
+            if (duration <= 30) return 5; // 30s -> 5s
+            if (duration <= 60) return 10; // 1min -> 10s
+            if (duration <= 180) return 30; // 3min -> 30s
+            if (duration <= 300) return 30; // 5min -> 30s
+            if (duration <= 1800) return 180; // 30min -> 3min
+            if (duration <= 3600) return 600; // 1H -> 10min
+            return 600; // 2H -> 10min
+        }
+
+        function getCommonXAxisConfig(duration) {
+            return {
+                type: 'linear',
+                ticks: {
+                    stepSize: getStepSize(duration),
+                    callback: function (value) {
+                        return value + 's'; // 显示秒数并添加单位
+                    },
+                    autoSkip: false // 禁用自动跳过
+                },
+                grid: {
+                    drawTicks: true, // 保留每个 tick 的线
+                    drawOnChartArea: true, // 绘制网格线
+                    drawBorder: true // 绘制边框线
+                },
+                min: 0,
+                max: duration
+            };
+        }
+
+        function getCommonChartConfig(title, duration) {
+            return {
+                type: 'line',
+                data: {
+                    labels: [], // 时间戳
+                    datasets: [] // 初始化时不包含任何数据集
+                },
+                options: {
+                    responsive: true,
+                    animation: false,
+                    elements: {
+                        point: {
+                            radius: 1 // 数据点的圆圈半径
+                        },
+                        line: {
+                            tension: 0.4 // 设置线条的平滑度，0 为直线，1 为完全平滑
+                        }
+                    },
+                    scales: {
+                        x: getCommonXAxisConfig(duration),
+                        y: {
+                            title: {
+                                display: true,
+                                text: title
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        function calculateStatistics(data) {
+            const filtered_data = data.filter(item => item !== null && !isNaN(item));
+            if (filtered_data.length === 0) return { avg: 0, min: 0, max: 0, stdDev: 0 };
+
+            const sum = filtered_data.reduce((acc, val) => acc + val, 0);
+            const avg = sum / filtered_data.length;
+            const min = Math.min(...filtered_data);
+            const max = Math.max(...filtered_data);
+            const variance = filtered_data.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / filtered_data.length;
+            const stdDev = Math.sqrt(variance);
+
+            return { avg, min, max, stdDev };
+        }
+
+        function updateStatistics(chart, stats_container_id) {
+            const datasets = chart.data.datasets;
+            const stats_container = document.getElementById(stats_container_id);
+
+            if (!stats_container) return;
+
+            let stats_data = datasets.map(dataset => {
+                const data = dataset.data;
+                const stats = calculateStatistics(data);
+                return {
+                    metric: dataset.label,
+                    avg: stats.avg.toFixed(2),
+                    min: stats.min.toFixed(2),
+                    max: stats.max.toFixed(2),
+                    stdDev: stats.stdDev.toFixed(2)
+                };
+            });
+
+            // 保留上一次的排序规则
+            let sortColumn = stats_container.dataset.sortColumn || 'metric';
+            let sortOrder = stats_container.dataset.sortOrder || 'asc';
+
+            function renderTable() {
+                const sortedData = [...stats_data].sort((a, b) => {
+                    const aValue = isNaN(parseFloat(a[sortColumn])) ? a[sortColumn] : parseFloat(a[sortColumn]);
+                    const bValue = isNaN(parseFloat(b[sortColumn])) ? b[sortColumn] : parseFloat(b[sortColumn]);
+
+                    if (sortOrder === 'asc') {
+                        return aValue > bValue ? 1 : -1;
+                    } else {
+                        return aValue < bValue ? 1 : -1;
+                    }
+                });
+
+                let stats_html = `
+                    <table border="1" style="border-collapse: collapse; width: 100%; text-align: left;">
+                        <thead>
+                            <tr>
+                                <th data-column="metric">Metric</th>
+                                <th data-column="avg">Avg</th>
+                                <th data-column="min">Min</th>
+                                <th data-column="max">Max</th>
+                                <th data-column="stdDev">StdDev</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                sortedData.forEach(row => {
+                    stats_html += `
+                        <tr>
+                            <td>${row.metric}</td>
+                            <td>${row.avg}</td>
+                            <td>${row.min}</td>
+                            <td>${row.max}</td>
+                            <td>${row.stdDev}</td>
+                        </tr>
+                    `;
+                });
+
+                stats_html += `
+                        </tbody>
+                    </table>
+                `;
+
+                stats_container.innerHTML = stats_html;
+
+                // 添加点击事件监听器
+                const headers = stats_container.querySelectorAll('th');
+                headers.forEach(header => {
+                    header.addEventListener('click', function () {
+                        const column = this.getAttribute('data-column');
+                        if (sortColumn === column) {
+                            sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            sortColumn = column;
+                            sortOrder = 'asc';
+                        }
+                        stats_container.dataset.sortColumn = sortColumn;
+                        stats_container.dataset.sortOrder = sortOrder;
+                        renderTable();
+                    });
+                });
+            }
+
+            renderTable();
+        }
+
+        var data_storage = {
+            data: [],
+            prev_raw: null,
+            duration: 60, // 60 seconds
+            add(data) {
+                if (this.prev_raw === null) {
+                    this.prev_raw = data;
+                    return;
+                }
+
+                let prev_cpu_user = this.prev_raw.cpu_user;
+                let prev_cpu_system = this.prev_raw.cpu_system;
+                let prev_cpu_idle = this.prev_raw.cpu_idle;
+                let prev_cpu_iowait = this.prev_raw.cpu_iowait;
+                let prev_cpu_steal = this.prev_raw.cpu_steal;
+                let prev_cpu_nice = this.prev_raw.cpu_nice;
+                let prev_cpu_irq = this.prev_raw.cpu_irq;
+                let prev_cpu_softirq = this.prev_raw.cpu_softirq;
+                let prev_cpu_arr = [
+                    prev_cpu_user,
+                    prev_cpu_system,
+                    prev_cpu_idle,
+                    prev_cpu_iowait,
+                    prev_cpu_steal,
+                    prev_cpu_nice,
+                    prev_cpu_irq,
+                    prev_cpu_softirq
+                ];
+
+                let cpu_user = data.cpu_user;
+                let cpu_system = data.cpu_system;
+                let cpu_idle = data.cpu_idle;
+                let cpu_iowait = data.cpu_iowait;
+                let cpu_steal = data.cpu_steal;
+                let cpu_nice = data.cpu_nice;
+                let cpu_irq = data.cpu_irq;
+                let cpu_softirq = data.cpu_softirq;
+                let cpu_arr = [
+                    cpu_user,
+                    cpu_system,
+                    cpu_idle,
+                    cpu_iowait,
+                    cpu_steal,
+                    cpu_nice,
+                    cpu_irq,
+                    cpu_softirq
+                ];
+
+                function addByIndex(arr, index) {
+                    let sum = 0;
+                    for (let i = 0; i < arr.length; i++) {
+                        if (!arr[i]) {
+                            continue;
+                        }
+                        if (arr[i].length > index) {
+                            sum += arr[i][index];
+                        }
+                    }
+                    return sum;
+                }
+
+                let prev_cpu_total = addByIndex(prev_cpu_arr, 0);
+                let cpu_total = addByIndex(cpu_arr, 0);
+                let cpu_cost = cpu_total - prev_cpu_total;
+
+                let summary_cpu_usage = (cpu_cost - (cpu_idle[0] - prev_cpu_idle[0])) / cpu_cost * 100;
+                let summary_cpu_idle = (cpu_idle[0] - prev_cpu_idle[0]) / cpu_cost * 100;
+
+                let cpu_cores = [];
+                // index 0 mean total
+                for (let i = 1; i < cpu_user.length; i++) {
+                    let core_cost = addByIndex(cpu_arr, i) - addByIndex(prev_cpu_arr, i);
+                    cpu_cores.push({
+                        core: i,
+                        cpu_usage: (core_cost - (cpu_idle[i] - prev_cpu_idle[i])) / core_cost * 100,
+                        cpu_idle: (cpu_idle[i] - prev_cpu_idle[i]) / core_cost * 100,
+                    });
+                }
+
+                let processes = [];
+                for (let i = 0; i < data.processes.length; i++) {
+                    let process = data.processes[i];
+                    let pid = process.pid;
+                    let name = process.name;
+                    for (let j = 0; j < this.prev_raw.processes.length; j++) {
+                        if (pid === this.prev_raw.processes[j].pid &&
+                            name === this.prev_raw.processes[j].name) {
+                            let prev_process = this.prev_raw.processes[j];
+                            let process_cpu_total = process.cpu_user + process.cpu_system;
+                            let prev_process_cpu_total = prev_process.cpu_user + prev_process.cpu_system;
+                            let process_cpu_cost = process_cpu_total - prev_process_cpu_total;
+                            let summary_process_cpu_usage = process_cpu_cost / cpu_cost * 100;
+
+                            let threads = [];
+                            for (let k = 0; k < process.threads.length; k++) {
+                                let thread = process.threads[k];
+                                let thread_tid = thread.tid;
+                                for (let l = 0; l < prev_process.threads.length; l++) {
+                                    if (thread_tid === prev_process.threads[l].tid) {
+                                        let thread_cpu_total = thread.cpu_user + thread.cpu_system;
+                                        let prev_thread_cpu_total = prev_process.threads[l].cpu_user + prev_process.threads[l].cpu_system;
+                                        let thread_cpu_cost = thread_cpu_total - prev_thread_cpu_total;
+                                        let summary_thread_cpu_usage = thread_cpu_cost / cpu_cost * 100;
+
+                                        threads.push({
+                                            tid: thread_tid,
+                                            priority: thread.priority,
+                                            cpu_usage: summary_thread_cpu_usage,
+                                        });
+                                        break;
+                                    }
+                                }
+                            }
+
+                            processes.push({
+                                pid: pid,
+                                name: name,
+                                cpu_usage: summary_process_cpu_usage,
+                                memory: process.memory / 1024, // 转换为 MB
+                                threads: threads,
+                            });
+                            break;
+                        }
+                    }
+                }
+
+                let parse_data = {
+                    timestamp: new Date(data.timestamp), // 转换为 Date 对象, timestamp 是ms
+                    free_memory: data.free_memory / 1024, // 转换为 MB
+                    used_memory: (data.total_memory - data.free_memory) / 1024, // 转换为 MB
+                    total_memory: data.total_memory / 1024, // 转换为 MB
+                    cpu_usage: summary_cpu_usage,
+                    cpu_idle: summary_cpu_idle,
+                    cpu_cores: cpu_cores,
+                    processes: processes,
+                };
+                this.prev_raw = data;
+                console.log(parse_data);
+
+                this.data.push(parse_data);
+
+                while (this.data.length > 0 && (parse_data.timestamp - this.data[0].timestamp) / 1000 > 7200) {
+                    this.data.shift();
+                }
+            },
+            setDuration(duration) {
+                this.duration = duration;
+            },
+            length() {
+                return this.data.length;
+            },
+            clear() {
+                this.data = [];
+                this.prev_raw = null;
+            },
+            last() {
+                if (this.data.length > 0) {
+                    return this.data[this.data.length - 1];
+                }
+                return null;
+            },
+            filtered(now) {
+                const filtered_data = this.data.filter(item => (now - item.timestamp) / 1000 <= this.duration);
+
+                // 多显示一个数据点
+                const extended_data = [...filtered_data];
+                if (filtered_data.length > 0) {
+                    const first_data_point = filtered_data[0];
+                    extended_data.unshift({
+                        ...first_data_point,
+                        timestamp: first_data_point.timestamp - 1000 // 假设间隔为 1 秒
+                    });
+                }
+                return extended_data;
+            }
+        };
+
+        var system_charts = {};
+        var process_charts = {};
+
+        function addChart(name, y_axis_label, is_system_chart = false) {
+            var ctx = document.createElement('canvas');
+            const random_id = Math.random().toString(36).substring(2, 15);
+            ctx.id = name.replace(' ', '_') + random_id;
+            ctx.style.width = '100%';
+            ctx.style.height = 'calc(100vh / 3)';
+
+            const stats_container = document.createElement('div');
+            stats_container.id = `${ctx.id}_stats`;
+            stats_container.style.fontSize = '14px';
+
+            if (is_system_chart) {
+                const first_canvas = document.querySelector('canvas');
+                if (first_canvas) {
+                    first_canvas.parentNode.insertBefore(ctx, first_canvas);
+                    first_canvas.parentNode.insertBefore(stats_container, first_canvas);
+                } else {
+                    document.body.insertBefore(ctx, document.getElementById('content'));
+                    document.body.insertBefore(stats_container, document.getElementById('content'));
+                }
+            } else {
+                document.body.insertBefore(ctx, document.getElementById('content'));
+                document.body.insertBefore(stats_container, document.getElementById('content'));
+            }
+
+            var chart = new Chart(ctx, getCommonChartConfig(y_axis_label, data_storage.duration));
+            return [chart, ctx, stats_container.id];
+        }
+
+        function updateAllStatistics() {
+            if (system_charts['system_cores']) {
+                updateStatistics(system_charts['system_cores'].chart, system_charts['system_cores'].stats_id);
+            }
+            if (system_charts['system_cpu']) {
+                updateStatistics(system_charts['system_cpu'].chart, system_charts['system_cpu'].stats_id);
+            }
+            if (system_charts['system_memory']) {
+                updateStatistics(system_charts['system_memory'].chart, system_charts['system_memory'].stats_id);
+            }
+            for (const pid in process_charts) {
+                const process_chart = process_charts[pid];
+                if (process_chart) {
+                    updateStatistics(process_chart.memory, process_chart.memory_stats_id);
+                    updateStatistics(process_chart.cpu, process_chart.cpu_stats_id);
+                    updateStatistics(process_chart.thread_cpu, process_chart.thread_cpu_stats_id);
+                }
+            }
+        }
+
+        function updateChartData(chart, extended_data, x_axis_labels, filter = null) {
+            chart.data.labels = x_axis_labels;
+            chart.data.datasets.forEach(dataset => {
+                dataset.data = extended_data.map(item => {
+                    if (filter) {
+                        return filter(dataset, item);
+                    }
+                    return item[dataset.label.toLowerCase().replace(' ', '_')];
+                });
+            });
+            chart.update();
+        }
+
+        function updateAllCharts(extended_data, x_axis_labels) {
+            // 更新系统内存图表
+            if (system_charts['system_memory']) {
+                updateChartData(system_charts['system_memory'].chart, extended_data, x_axis_labels);
+            }
+
+            // 更新系统 CPU 图表
+            if (system_charts['system_cpu']) {
+                updateChartData(system_charts['system_cpu'].chart, extended_data, x_axis_labels);
+            }
+
+            // 更新系统核图表
+            if (system_charts['system_cores']) {
+                const system_cores = system_charts['system_cores'].chart;
+                system_cores.data.datasets.forEach(dataset => {
+                    const core_index = parseInt(dataset.label.split(' ')[1], 10);
+                    dataset.data = extended_data.map(item => {
+                        const core_data = item.cpu_cores.find(core => core.core === core_index);
+                        return core_data ? core_data.cpu_usage : null;
+                    });
+                });
+                system_cores.data.labels = x_axis_labels;
+                system_cores.update();
+            }
+
+            // 更新进程图表
+            for (const pid in process_charts) {
+                const process_chart = process_charts[pid];
+                if (process_chart) {
+                    updateChartData(process_chart.memory, extended_data, x_axis_labels, (datasets, item) => item.processes.find(p => p.pid == pid)?.memory);
+                    updateChartData(process_chart.cpu, extended_data, x_axis_labels, (datasets, item) => item.processes.find(p => p.pid == pid)?.cpu_usage);
+                    updateChartData(process_chart.thread_cpu, extended_data, x_axis_labels, (datasets, item) => {
+                        const thread = datasets.label.split(' ')[1];
+                        const process = item.processes.find(p => p.pid == pid);
+                        const thread_data = process ? process.threads.find(t => t.tid == thread) : null;
+                        return thread_data ? thread_data.cpu_usage : null;
+                    });
+                }
+            }
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
             var socket = io.connect('http://' + document.domain + ':' + location.port);
             var ip = "{{ ip }}";
+            var first_data_received = false; // 标记是否收到第一个数据
+            var after_clear = false; // 标记是否在 clear 后收到数据
+            var is_paused = false; // 标记图表是否暂停
+
             socket.emit('subscribe', { ip: ip });
+
             socket.on('new_data/' + ip, function (data) {
-                var dataList = data.data;
-                var index = data.index;
-                var content = document.getElementById("content");
-                content.innerHTML += index + ':' + JSON.stringify(dataList, null, 2) + '\n';
-                var datetime = new Date();
-                console.log(datetime.toISOString() + ' ' + index);
+                let stat = JSON.parse(data.data);
+                data_storage.add(stat);
+
+                // 如果是第一次收到数据或 clear 后的第一次数据，自动点击 updateChart
+                if ((!first_data_received || after_clear) && (data_storage.length() > 0)) {
+                    first_data_received = true;
+                    after_clear = false;
+                    document.getElementById("updateChart").click();
+                }
+
+                if (!is_paused && data_storage.length() > 0) {
+                    const now = data_storage.last().timestamp;
+                    const extended_data = data_storage.filtered(now);
+                    const x_axis_labels = extended_data.map(item => (item.timestamp - now) / 1000 + data_storage.duration);
+
+                    // 更新所有图表数据
+                    updateAllCharts(extended_data, x_axis_labels);
+                }
+
+                // 更新统计数据
+                updateAllStatistics();
+
                 // keep alive
                 socket.emit('subscribe', { ip: ip });
             });
+
             socket.on('clear/' + ip, function () {
                 var content = document.getElementById("content");
                 content.innerHTML = '';
+                data_storage.clear();
+
+                // 清空系统图表数据
+                if (system_charts['system_memory']) {
+                    system_charts['system_memory'].chart.data.labels = [];
+                    system_charts['system_memory'].chart.data.datasets = [];
+                    system_charts['system_memory'].chart.update();
+                }
+                if (system_charts['system_cpu']) {
+                    system_charts['system_cpu'].chart.data.labels = [];
+                    system_charts['system_cpu'].chart.data.datasets = [];
+                    system_charts['system_cpu'].chart.update();
+                }
+                if (system_charts['system_cores']) {
+                    system_charts['system_cores'].chart.data.labels = [];
+                    system_charts['system_cores'].chart.data.datasets = [];
+                    system_charts['system_cores'].chart.update();
+                }
+
+                // 标记为 clear 后的状态
+                after_clear = true;
+            });
+
+            document.getElementById("updateChart").addEventListener("click", function () {
+                const input = document.getElementById("metricsInput").value;
+                const metrics = input.split(',').map(metric => metric.trim()).filter(metric => metric);
+
+                initSystemCharts(metrics);
+                initProcessCharts(metrics);
+
+                // 更新统计数据
+                updateAllStatistics();
+            });
+
+            document.getElementById("durationSelect").addEventListener("change", function () {
+                const selected_duration = parseInt(this.value, 10);
+                data_storage.setDuration(selected_duration);
+
+                // 更新系统图表范围和刻度
+                if (system_charts['system_memory']) {
+                    system_charts['system_memory'].chart.options.scales.x = getCommonXAxisConfig(selected_duration);
+                    system_charts['system_memory'].chart.update();
+                }
+                if (system_charts['system_cpu']) {
+                    system_charts['system_cpu'].chart.options.scales.x = getCommonXAxisConfig(selected_duration);
+                    system_charts['system_cpu'].chart.update();
+                }
+                if (system_charts['system_cores']) {
+                    system_charts['system_cores'].chart.options.scales.x = getCommonXAxisConfig(selected_duration);
+                    system_charts['system_cores'].chart.update();
+                }
+
+                // 更新进程图表范围和刻度
+                for (const pid in process_charts) {
+                    const process_chart = process_charts[pid];
+                    if (process_chart) {
+                        process_chart.memory.options.scales.x = getCommonXAxisConfig(selected_duration);
+                        process_chart.memory.update();
+
+                        process_chart.cpu.options.scales.x = getCommonXAxisConfig(selected_duration);
+                        process_chart.cpu.update();
+
+                        process_chart.thread_cpu.options.scales.x = getCommonXAxisConfig(selected_duration);
+                        process_chart.thread_cpu.update();
+                    }
+                }
+
+                // 更新统计数据
+                updateAllStatistics();
+            });
+
+            document.getElementById("pauseChart").addEventListener("click", function () {
+                is_paused = !is_paused;
+                this.textContent = is_paused ? "Resume Chart" : "Pause Chart";
             });
         });
+
+        function initSystemCharts(metrics) {
+            const system_memory_metrics = ["free_memory", "used_memory", "total_memory"];
+            const system_cpu_metrics = ["cpu_usage", "cpu_idle"];
+            const system_cores_metrics = ["cpu_cores"];
+
+            // 检查是否需要创建或移除系统核图表
+            const has_system_cores_metrics = metrics.some(metric => system_cores_metrics.includes(metric));
+            if (has_system_cores_metrics && !system_charts['system_cores']) {
+                const [system_cores_chart, system_cores_ctx, stats_id] = addChart('System Cores', 'CPU Cores(%)', true);
+                system_charts['system_cores'] = {
+                    chart: system_cores_chart,
+                    ctx: system_cores_ctx,
+                    stats_id: stats_id
+                };
+            } else if (!has_system_cores_metrics && system_charts['system_cores']) {
+                const system_cores = system_charts['system_cores'].chart;
+                system_cores.destroy();
+                const system_cores_ctx = system_charts['system_cores'].ctx;
+                if (system_cores_ctx && system_cores_ctx.parentNode) {
+                    system_cores_ctx.parentNode.removeChild(system_cores_ctx);
+                }
+
+                const system_cores_stats_id = system_charts['system_cores'].stats_id;
+                const system_cores_stats_container = document.getElementById(system_cores_stats_id);
+                if (system_cores_stats_container) {
+                    system_cores_stats_container.parentNode.removeChild(system_cores_stats_container);
+                }
+
+                delete system_charts['system_cores'];
+            }
+
+            // 检查是否需要创建或移除系统 CPU 图表
+            const has_system_cpu_metrics = metrics.some(metric => system_cpu_metrics.includes(metric));
+            if (has_system_cpu_metrics && !system_charts['system_cpu']) {
+                const [system_cpu_chart, system_cpu_ctx, stats_id] = addChart('System CPU', 'CPU(%)', true);
+                system_charts['system_cpu'] = {
+                    chart: system_cpu_chart,
+                    ctx: system_cpu_ctx,
+                    stats_id: stats_id
+                };
+            } else if (!has_system_cpu_metrics && system_charts['system_cpu']) {
+                const system_cpu = system_charts['system_cpu'].chart;
+                system_cpu.destroy();
+                const system_cpu_ctx = system_charts['system_cpu'].ctx;
+                if (system_cpu_ctx && system_cpu_ctx.parentNode) {
+                    system_cpu_ctx.parentNode.removeChild(system_cpu_ctx);
+                }
+
+                const system_cpu_stats_id = system_charts['system_cpu'].stats_id;
+                const system_cpu_stats_container = document.getElementById(system_cpu_stats_id);
+                if (system_cpu_stats_container) {
+                    system_cpu_stats_container.parentNode.removeChild(system_cpu_stats_container);
+                }
+
+                delete system_charts['system_cpu'];
+            }
+
+            // 检查是否需要创建或移除系统内存图表
+            const has_system_memory_metrics = metrics.some(metric => system_memory_metrics.includes(metric));
+            if (has_system_memory_metrics && !system_charts['system_memory']) {
+                const [system_memory_chart, system_memory_ctx, stats_id] = addChart('System Memory', 'Memory(MB)', true);
+                system_charts['system_memory'] = {
+                    chart: system_memory_chart,
+                    ctx: system_memory_ctx,
+                    stats_id: stats_id
+                };
+            } else if (!has_system_memory_metrics && system_charts['system_memory']) {
+                const system_memory = system_charts['system_memory'].chart;
+                system_memory.destroy();
+                const system_memory_ctx = system_charts['system_memory'].ctx;
+                if (system_memory_ctx && system_memory_ctx.parentNode) {
+                    system_memory_ctx.parentNode.removeChild(system_memory_ctx);
+                }
+
+                const system_memory_stats_id = system_charts['system_memory'].stats_id;
+                const system_memory_stats_container = document.getElementById(system_memory_stats_id);
+                if (system_memory_stats_container) {
+                    system_memory_stats_container.parentNode.removeChild(system_memory_stats_container);
+                }
+
+                delete system_charts['system_memory'];
+            }
+
+            // 更新系统内存图表数据
+            if (system_charts['system_memory']) {
+                const system_memory = system_charts['system_memory'].chart;
+                system_memory.data.datasets = [];
+                const now = data_storage.last() ? data_storage.last().timestamp : Date.now();
+                const filtered_data = data_storage.data.filter(item => (now - item.timestamp) / 1000 <= data_storage.duration);
+
+                // 多显示一个数据点
+                const extended_data = [...filtered_data];
+                if (filtered_data.length > 0) {
+                    const first_data_point = filtered_data[0];
+                    extended_data.unshift({
+                        ...first_data_point,
+                        timestamp: first_data_point.timestamp - 1000 // 假设间隔为 1 秒
+                    });
+                }
+
+                const x_axis_labels = extended_data.map(item => (item.timestamp - now) / 1000 + data_storage.duration);
+
+                for (const metric of system_memory_metrics) {
+                    if (metrics.includes(metric)) {
+                        system_memory.data.datasets.push({
+                            label: metric.replace('_', ' ').toUpperCase(),
+                            data: extended_data.map(item => item[metric]),
+                            borderColor: getRandomColor(),
+                            backgroundColor: 'rgba(0, 0, 0, 0)',
+                            borderWidth: 1,
+                            fill: false
+                        });
+                    }
+                }
+                system_memory.data.labels = x_axis_labels;
+                system_memory.update();
+            }
+
+            // 更新系统 CPU 图表数据
+            if (system_charts['system_cpu']) {
+                const system_cpu = system_charts['system_cpu'].chart;
+                system_cpu.data.datasets = [];
+                const now = data_storage.last() ? data_storage.last().timestamp : Date.now();
+                const filtered_data = data_storage.data.filter(item => (now - item.timestamp) / 1000 <= data_storage.duration);
+
+                // 多显示一个数据点
+                const extended_data = [...filtered_data];
+                if (filtered_data.length > 0) {
+                    const first_data_point = filtered_data[0];
+                    extended_data.unshift({
+                        ...first_data_point,
+                        timestamp: first_data_point.timestamp - 1000 // 假设间隔为 1 秒
+                    });
+                }
+
+                const x_axis_labels = extended_data.map(item => (item.timestamp - now) / 1000 + data_storage.duration);
+
+                for (const metric of system_cpu_metrics) {
+                    if (metrics.includes(metric)) {
+                        system_cpu.data.datasets.push({
+                            label: metric.replace('_', ' ').toUpperCase(),
+                            data: extended_data.map(item => item[metric]),
+                            borderColor: getRandomColor(),
+                            backgroundColor: 'rgba(0, 0, 0, 0)',
+                            borderWidth: 1,
+                            fill: false
+                        });
+                    }
+                }
+                system_cpu.data.labels = x_axis_labels;
+                system_cpu.update();
+            }
+
+            // 更新系统核图表数据
+            if (system_charts['system_cores']) {
+                const system_cores = system_charts['system_cores'].chart;
+                system_cores.data.datasets = [];
+                const now = data_storage.last() ? data_storage.last().timestamp : Date.now();
+                const filtered_data = data_storage.data.filter(item => (now - item.timestamp) / 1000 <= data_storage.duration);
+
+                // 多显示一个数据点
+                const extended_data = [...filtered_data];
+                if (filtered_data.length > 0) {
+                    const first_data_point = filtered_data[0];
+                    extended_data.unshift({
+                        ...first_data_point,
+                        timestamp: first_data_point.timestamp - 1000 // 假设间隔为 1 秒
+                    });
+                }
+
+                const x_axis_labels = extended_data.map(item => (item.timestamp - now) / 1000 + data_storage.duration);
+
+                extended_data.forEach(item => {
+                    item.cpu_cores.forEach(core => {
+                        const core_label = `Core ${core.core}`;
+                        if (!system_cores.data.datasets.some(dataset => dataset.label === core_label)) {
+                            system_cores.data.datasets.push({
+                                label: core_label,
+                                data: [],
+                                borderColor: getRandomColor(),
+                                backgroundColor: 'rgba(0, 0, 0, 0)',
+                                borderWidth: 1,
+                                fill: false
+                            });
+                        }
+                    });
+                });
+
+                system_cores.data.datasets.forEach(dataset => {
+                    const core_index = parseInt(dataset.label.split(' ')[1], 10);
+                    dataset.data = extended_data.map(item => {
+                        const core_data = item.cpu_cores.find(core => core.core === core_index);
+                        return core_data ? core_data.cpu_usage : null;
+                    });
+                });
+
+                system_cores.data.labels = x_axis_labels;
+                system_cores.update();
+            }
+        }
+
+        function initProcessCharts(metrics) {
+            const pids = metrics.filter(metric => metric.startsWith('pid='));
+            const comms = metrics.filter(metric => metric.startsWith('comm='));
+            const process_list = pids.concat(comms);
+            console.log('process_list:', process_list);
+            let valid_pids = [];
+            for (const process_input of process_list) {
+                const pid_input = process_input.startsWith('pid=') ? process_input : null;
+                const comm_input = process_input.startsWith('comm=') ? process_input : null;
+
+                const pid = pid_input ? parseInt(pid_input.split('=')[1], 10) : null;
+                const comm = comm_input ? comm_input.split('=')[1] : null;
+                console.log('pid:', pid, 'comm:', comm);
+                if (!pid && !comm) continue;
+
+                const process = data_storage.last()?.processes.find(proc => ((proc.pid === pid) || proc.name.includes(comm)));
+                if (!process) continue;
+
+                const process_id = process.pid;
+                const process_name = process.name;
+                console.log('process_id:', process_id, 'process_name:', process_name);
+                valid_pids.push(process_id);
+
+                if (!process_charts[process_id]) {
+                    const [process_memory_chart, process_memory_ctx, memory_stats_id] = addChart(`Process_${process_id}_Memory`, 'Memory(MB)');
+                    process_memory_chart.data.datasets.push({
+                        label: `Process ${process_id}[${process_name}] Memory`,
+                        data: data_storage.data.map(item => {
+                            const proc = item.processes.find(p => p.pid === process_id);
+                            return proc ? proc.memory : null; // 确保数据为 null 而非 0
+                        }),
+                        borderColor: getRandomColor(),
+                        backgroundColor: 'rgba(0, 0, 0, 0)',
+                        borderWidth: 1,
+                        fill: false
+                    });
+                    process_memory_chart.update();
+
+                    const [process_cpu_chart, process_cpu_ctx, cpu_stats_id] = addChart(`Process_${process_id}_CPU`, 'CPU Usage (%)');
+                    process_cpu_chart.data.datasets.push({
+                        label: `Process ${process_id}[${process_name}] CPU`,
+                        data: data_storage.data.map(item => {
+                            const proc = item.processes.find(p => p.pid === process_id);
+                            return proc ? proc.cpu_usage : null; // 确保数据为 null 而非 0
+                        }),
+                        borderColor: getRandomColor(),
+                        backgroundColor: 'rgba(0, 0, 0, 0)',
+                        borderWidth: 1,
+                        fill: false
+                    });
+                    process_cpu_chart.update();
+
+                    const [process_thread_cpu_chart, process_thread_cpu_ctx, thread_cpu_stats_id] = addChart(`Process_${process_id}_ThreadsCPU`, 'Thread CPU Usage (%)');
+                    process.threads.forEach(thread => {
+                        process_thread_cpu_chart.data.datasets.push({
+                            label: `Thread[${thread.priority}] ${thread.tid}`,
+                            data: data_storage.data.map(item => {
+                                const proc = item.processes.find(p => p.pid === process_id);
+                                if (proc) {
+                                    const thread_data = proc.threads.find(t => t.tid == thread.tid); // 使用 tid 确认线程
+                                    return thread_data ? thread_data.cpu_usage : null; // 确保数据为 null 而非 0
+                                }
+                                return null;
+                            }),
+                            borderColor: getRandomColor(),
+                            backgroundColor: 'rgba(0, 0, 0, 0)',
+                            borderWidth: 1,
+                            fill: false
+                        });
+                    });
+                    process_thread_cpu_chart.update();
+
+                    process_charts[process_id] = {
+                        memory: process_memory_chart,
+                        memory_ctx: process_memory_ctx,
+                        memory_stats_id: memory_stats_id,
+                        cpu: process_cpu_chart,
+                        cpu_ctx: process_cpu_ctx,
+                        cpu_stats_id: cpu_stats_id,
+                        thread_cpu: process_thread_cpu_chart,
+                        thread_cpu_ctx: process_thread_cpu_ctx,
+                        thread_cpu_stats_id: thread_cpu_stats_id
+                    };
+                }
+            }
+
+            // 移除未指定的进程图表
+            for (const pid in process_charts) {
+                if (!valid_pids.some(p => p == pid)) {
+                    const process_chart = process_charts[pid];
+                    if (process_chart) {
+                        process_chart.memory.destroy();
+                        process_chart.cpu.destroy();
+                        process_chart.thread_cpu.destroy();
+                        delete process_charts[pid];
+
+                        const process_memory_ctx = process_chart.memory_ctx;
+                        const process_cpu_ctx = process_chart.cpu_ctx;
+                        const process_thread_cpu_ctx = process_chart.thread_cpu_ctx;
+                        if (process_memory_ctx && process_memory_ctx.parentNode) {
+                            process_memory_ctx.parentNode.removeChild(process_memory_ctx);
+                        }
+                        if (process_cpu_ctx && process_cpu_ctx.parentNode) {
+                            process_cpu_ctx.parentNode.removeChild(process_cpu_ctx);
+                        }
+                        if (process_thread_cpu_ctx && process_thread_cpu_ctx.parentNode) {
+                            process_thread_cpu_ctx.parentNode.removeChild(process_thread_cpu_ctx);
+                        }
+
+                        const memory_stats_id = process_chart.memory_stats_id;
+                        const cpu_stats_id = process_chart.cpu_stats_id;
+                        const thread_cpu_stats_id = process_chart.thread_cpu_stats_id;
+                        const memory_stats_container = document.getElementById(memory_stats_id);
+                        const cpu_stats_container = document.getElementById(cpu_stats_id);
+                        const thread_cpu_stats_container = document.getElementById(thread_cpu_stats_id);
+                        if (memory_stats_container) {
+                            memory_stats_container.parentNode.removeChild(memory_stats_container);
+                        }
+                        if (cpu_stats_container) {
+                            cpu_stats_container.parentNode.removeChild(cpu_stats_container);
+                        }
+                        if (thread_cpu_stats_container) {
+                            thread_cpu_stats_container.parentNode.removeChild(thread_cpu_stats_container);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 随机颜色生成函数
+        function getRandomColor() {
+            const r = Math.floor(Math.random() * 255);
+            const g = Math.floor(Math.random() * 255);
+            const b = Math.floor(Math.random() * 255);
+            return `rgba(${r}, ${g}, ${b}, 1)`;
+        }
     </script>
 </head>
 
 <body>
+    <div id="config">
+        <label for="durationSelect">Select duration:</label>
+        <select id="durationSelect">
+            <option value="10">10s</option>
+            <option value="30">30s</option>
+            <option value="60" selected>1min</option>
+            <option value="180">3min</option>
+            <option value="300">5min</option>
+            <option value="1800">30min</option>
+            <option value="3600">1H</option>
+            <option value="7200">2H</option>
+        </select>
+        <label for="metricsInput">Enter metrics (e.g., free_memory, used_memory):</label>
+        <input type="text" id="metricsInput" placeholder="Enter metrics separated by commas" ,
+            value="used_memory,cpu_usage,cpu_cores">
+        <button id="updateChart">Update Chart</button>
+        <button id="pauseChart">Pause Chart</button>
+    </div>
     <pre id="content"></pre>
 </body>
 

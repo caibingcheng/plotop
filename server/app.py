@@ -127,12 +127,9 @@ def run_socket_server():
 @app.route('/', methods=['GET'])
 def index():
     args = request.args
-    if 'ip' not in args:
+    if 'ip' not in args or args['ip'] not in client_data:
         return render_template('index.html', client_ips=client_data.keys())
-    ip = args['ip']
-    if ip not in client_data:
-        return "Invalid IP"
-    return render_template('plot.html', ip=ip)
+    return render_template('plot.html', ip=args['ip'])
 
 
 @socketio.on('subscribe')

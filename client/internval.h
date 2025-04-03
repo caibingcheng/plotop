@@ -11,15 +11,15 @@
 
 class Interval {
  public:
-  Interval(int64_t start_offset_ms, int64_t interval_ms, std::function<void()> task)
-      : start_offset_ms_(start_offset_ms), interval_ms_(interval_ms), stop_(false), task_(task) {
+  Interval(int64_t start_offset_s, int64_t interval_s, std::function<void()> task)
+      : start_offset_ms_(start_offset_s), interval_ms_(interval_s), stop_(false), task_(task) {
     last_time_ = std::chrono::system_clock::now();
-    next_time_ = last_time_ + std::chrono::milliseconds(start_offset_ms_);
-    Log::debug("Interval start_offset_ms: ", start_offset_ms, " interval_ms: ", interval_ms);
+    next_time_ = last_time_ + std::chrono::seconds(start_offset_s);
+    Log::debug("Interval start_offset_s: ", start_offset_s, " interval_s: ", interval_s);
     thread_ = std::thread(&Interval::run, this);
   }
 
-  Interval(int64_t interval_ms, std::function<void()> task) : Interval(0, interval_ms, task) {}
+  Interval(int64_t interval_s, std::function<void()> task) : Interval(0, interval_s, task) {}
 
   ~Interval() {
     if (thread_.joinable()) {
@@ -43,11 +43,12 @@ class Interval {
       if (now_ >= next_time_) {
         task_();
         last_time_ = now_;
-        next_time_ = last_time_ + std::chrono::milliseconds(interval_ms_);
+        next_time_ = last_time_ + std::chrono::seconds(interval_ms_);
       }
 
       const auto sleep_time = next_time_ - std::chrono::system_clock::now();
       if (sleep_time.count() > 0) {
+        // Log::debug("Interval sleep: ", sleep_time.count());
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait_for(lock, sleep_time, [this]() { return stop_; });
       }

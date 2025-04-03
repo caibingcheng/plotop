@@ -7,6 +7,7 @@
 #include <list>
 #include <regex>
 #include <string>
+#include <string_view>
 
 #include "log.h"
 
@@ -76,6 +77,7 @@ struct Stat {
 };
 
 struct CPUsage {
+  char cpu_name[32];
   uint64_t user;
   uint64_t nice;
   uint64_t system;
@@ -83,6 +85,9 @@ struct CPUsage {
   uint64_t iowait;
   uint64_t irq;
   uint64_t softirq;
+  uint64_t steal;
+  uint64_t guest;
+  uint64_t guest_nice;
 };
 
 class Packet::ImplPacket {
@@ -111,6 +116,15 @@ class Packet::ImplPacket {
     stats.total_memory = get_total_memory_();
     stats.free_memory = get_free_memory_();
     stats.processes = get_processes_(patterns);
+    auto summary_cpu = get_cpu_usage_();
+    for (const auto &cpu : summary_cpu) {
+      stats.cpu_user.push_back(cpu.user);
+      stats.cpu_system.push_back(cpu.system);
+      stats.cpu_idle.push_back(cpu.idle);
+      stats.cpu_iowait.push_back(cpu.iowait);
+      stats.cpu_irq.push_back(cpu.irq);
+      stats.cpu_softirq.push_back(cpu.softirq);
+    }
   }
 
  private:
@@ -135,7 +149,6 @@ class Packet::ImplPacket {
   std::string get_string_from_file_(const std::string &file) {
     std::ifstream ifs(file);
     if (!ifs.is_open()) {
-      Log::error("Failed to open ", file);
       return "";
     }
 
@@ -151,7 +164,6 @@ class Packet::ImplPacket {
     std::list<int32_t> pids;
     DIR *dir = opendir(get_proc().c_str());
     if (dir == nullptr) {
-      Log::error("Failed to open ", get_proc());
       return pids;
     }
 
@@ -173,7 +185,6 @@ class Packet::ImplPacket {
     std::list<int32_t> tids;
     DIR *dir = opendir(get_proc_tid(pid).c_str());
     if (dir == nullptr) {
-      Log::error("Failed to open ", get_proc_tid(pid));
       return tids;
     }
 
@@ -191,6 +202,57 @@ class Packet::ImplPacket {
     return tids;
   }
 
+  bool parse_stat_(const std::string &stat_str, Stat &stat) {
+    std::string_view stat_view(stat_str);
+    std::string comm_str(stat_str.substr(0, stat_str.find_last_of(")") + 1));
+    const auto pid_comm_count = sscanf(comm_str.c_str(), "%d %s", &stat.pid, stat.comm);
+    if (pid_comm_count != 2) {
+      Log::error("Failed to parse ", stat_str, " expected ", 2, " got ", pid_comm_count);
+      return false;
+    }
+
+    auto other_view = stat_view.substr(stat_view.find_last_of(")") + 1);
+    other_view = other_view.substr(other_view.find_first_not_of(" \t"));
+    const auto scan_count =
+        sscanf(other_view.data(),
+               "%c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu "
+               "%lu %lu %lu %lu %lu %lu %lu %lu %lu %d %u %u %u %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %d",
+               &stat.state, &stat.ppid, &stat.pgrp, &stat.session, &stat.tty_nr, &stat.tpgid, &stat.flags, &stat.minflt,
+               &stat.cminflt, &stat.majflt, &stat.cmajflt, &stat.utime, &stat.stime, &stat.cutime, &stat.cstime,
+               &stat.priority, &stat.nice, &stat.num_threads, &stat.itrealvalue, &stat.starttime, &stat.vsize,
+               &stat.rss, &stat.rsslim, &stat.startcode, &stat.endcode, &stat.startstack, &stat.kstkesp, &stat.kstkeip,
+               &stat.signal, &stat.blocked, &stat.sigignore, &stat.sigcatch, &stat.wchan, &stat.nswap, &stat.cnswap,
+               &stat.exit_signal, &stat.processor, &stat.rt_priority, &stat.policy, &stat.delayacct_blkio_ticks,
+               &stat.guest_time, &stat.cguest_time, &stat.start_data, &stat.end_data, &stat.start_brk, &stat.arg_start,
+               &stat.arg_end, &stat.env_start, &stat.env_end, &stat.exit_code);
+    if (scan_count != 50) {
+      Log::error("Failed to parse \"", other_view.data(), "\" expected ", 50, " got ", scan_count);
+      return false;
+    }
+    return true;
+  }
+
+  bool parse_statm_(const std::string &statm_str, StatM &statm) {
+    const auto scan_count = sscanf(statm_str.c_str(), "%d %d %d %d %d %d %d", &statm.size, &statm.resident,
+                                   &statm.shared, &statm.text, &statm.lib, &statm.data, &statm.dt);
+    if (scan_count != 7) {
+      Log::error("Failed to parse ", statm_str, " expected ", 7, " got ", scan_count);
+      return false;
+    }
+    return true;
+  }
+
+  bool parse_cpu_usage_(const std::string &cpu_str, CPUsage &cpu) {
+    const auto scan_count =
+        sscanf(cpu_str.c_str(), "%s %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu", cpu.cpu_name, &cpu.user, &cpu.nice,
+               &cpu.system, &cpu.idle, &cpu.iowait, &cpu.irq, &cpu.softirq, &cpu.steal, &cpu.guest, &cpu.guest_nice);
+    if (scan_count != 11) {
+      Log::error("Failed to parse ", cpu_str, " expected ", 11, " got ", scan_count);
+      return false;
+    }
+    return true;
+  }
+
   std::list<Thread> get_threads_(int32_t pid) {
     std::list<Thread> threads;
     for (const auto tid : get_tids_(pid)) {
@@ -199,20 +261,13 @@ class Packet::ImplPacket {
         continue;
       }
       Stat stat;
-      sscanf(stat_str.c_str(),
-             "%d %s %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu "
-             "%lu %lu %lu %lu %lu %lu %lu %lu %lu %d %u %u %u %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %d",
-             &stat.pid, stat.comm, &stat.state, &stat.ppid, &stat.pgrp, &stat.session, &stat.tty_nr, &stat.tpgid,
-             &stat.flags, &stat.minflt, &stat.cminflt, &stat.majflt, &stat.cmajflt, &stat.utime, &stat.stime,
-             &stat.cutime, &stat.cstime, &stat.priority, &stat.nice, &stat.num_threads, &stat.itrealvalue,
-             &stat.starttime, &stat.vsize, &stat.rss, &stat.rsslim, &stat.startcode, &stat.endcode, &stat.startstack,
-             &stat.kstkesp, &stat.kstkeip, &stat.signal, &stat.blocked, &stat.sigignore, &stat.sigcatch, &stat.wchan,
-             &stat.nswap, &stat.cnswap, &stat.exit_signal, &stat.processor, &stat.rt_priority, &stat.policy,
-             &stat.delayacct_blkio_ticks, &stat.guest_time, &stat.cguest_time, &stat.start_data, &stat.end_data,
-             &stat.start_brk, &stat.arg_start, &stat.arg_end, &stat.env_start, &stat.env_end, &stat.exit_code);
+      if (!parse_stat_(stat_str, stat)) {
+        continue;
+      }
 
       Thread thread;
       thread.tid = tid;
+      thread.priority = stat.priority;
       thread.cpu_user = stat.utime;
       thread.cpu_system = stat.stime;
       threads.push_back(thread);
@@ -229,26 +284,13 @@ class Packet::ImplPacket {
         continue;
       }
       Stat stat;
-      sscanf(stat_str.c_str(),
-             "%d %s %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu "
-             "%lu %lu %lu %lu %lu %lu %lu %lu %lu %d %u %u %u %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %d",
-             &stat.pid, stat.comm, &stat.state, &stat.ppid, &stat.pgrp, &stat.session, &stat.tty_nr, &stat.tpgid,
-             &stat.flags, &stat.minflt, &stat.cminflt, &stat.majflt, &stat.cmajflt, &stat.utime, &stat.stime,
-             &stat.cutime, &stat.cstime, &stat.priority, &stat.nice, &stat.num_threads, &stat.itrealvalue,
-             &stat.starttime, &stat.vsize, &stat.rss, &stat.rsslim, &stat.startcode, &stat.endcode, &stat.startstack,
-             &stat.kstkesp, &stat.kstkeip, &stat.signal, &stat.blocked, &stat.sigignore, &stat.sigcatch, &stat.wchan,
-             &stat.nswap, &stat.cnswap, &stat.exit_signal, &stat.processor, &stat.rt_priority, &stat.policy,
-             &stat.delayacct_blkio_ticks, &stat.guest_time, &stat.cguest_time, &stat.start_data, &stat.end_data,
-             &stat.start_brk, &stat.arg_start, &stat.arg_end, &stat.env_start, &stat.env_end, &stat.exit_code);
+      if (!parse_stat_(stat_str, stat)) {
+        continue;
+      }
 
       std::string name(stat.comm);
-      bool match = false;
-      for (const auto &pattern : patterns) {
-        if (std::regex_match(name, std::regex(pattern))) {
-          match = true;
-          break;
-        }
-      }
+      auto pattern_match = [&](const std::string &pattern) { return name.find(pattern) != std::string::npos; };
+      const bool match = patterns.empty() || std::any_of(patterns.begin(), patterns.end(), pattern_match);
       if (!match) {
         continue;
       }
@@ -258,8 +300,9 @@ class Packet::ImplPacket {
         continue;
       }
       StatM statm;
-      sscanf(statm_str.c_str(), "%d %d %d %d %d %d %d", &statm.size, &statm.resident, &statm.shared, &statm.text,
-             &statm.lib, &statm.data, &statm.dt);
+      if (!parse_statm_(statm_str, statm)) {
+        continue;
+      }
 
       Process process;
       process.pid = pid;
@@ -286,8 +329,9 @@ class Packet::ImplPacket {
     while (std::getline(ifs, line)) {
       if (line.find("cpu") != std::string::npos) {
         CPUsage cpu;
-        sscanf(line.c_str(), "%lu %lu %lu %lu %lu %lu %lu", &cpu.user, &cpu.nice, &cpu.system, &cpu.idle,
-               &cpu.iowait, &cpu.irq, &cpu.softirq);
+        if (!parse_cpu_usage_(line, cpu)) {
+          continue;
+        }
         cpus.push_back(cpu);
       }
     }

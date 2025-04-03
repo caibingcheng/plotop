@@ -17,28 +17,30 @@ class Cmdline {
 
  public:
   template <typename T, typename std::enable_if<std::is_integral_v<T>, int>::type = 0>
-  void add_argument(const std::string &name, T &arg, T default_value) {
+  void add_argument(char short_name, const std::string &name, T &arg, T default_value) {
     arg = default_value;
-    arguments_[name] = [&](const std::string &value) { arg = static_cast<T>(std::stoi(value)); };
+    arguments_[std::string(1, short_name)] =
+        arguments_[name] = [&](const std::string &value) { arg = static_cast<T>(std::stoi(value)); };
   }
 
   template <typename T, typename std::enable_if<std::is_floating_point_v<T>, int>::type = 0>
-  void add_argument(const std::string &name, T &arg, T default_value) {
+  void add_argument(char short_name, const std::string &name, T &arg, T default_value) {
     arg = default_value;
-    arguments_[name] = [&](const std::string &value) { arg = static_cast<T>(std::stod(value)); };
+    arguments_[std::string(1, short_name)] =
+        arguments_[name] = [&](const std::string &value) { arg = static_cast<T>(std::stod(value)); };
   }
 
-  template <typename T, typename std::enable_if<decltype(std::declval<T>().begin(), std::declval<T>().end(), std::true_type{})::value, int>::type = 0>
-  void add_argument(const std::string &name, T &arg, const T &default_value) {
-    arg.clear();
-    arguments_[name] = [&](const std::string &value) {
-      arg.emplace_back(value);
-    };
+  template <typename T,
+            typename std::enable_if<
+                decltype(std::declval<T>().begin(), std::declval<T>().end(), std::true_type{})::value, int>::type = 0>
+  void add_argument(char short_name, const std::string &name, T &arg) {
+    arguments_[std::string(1, short_name)] =
+        arguments_[name] = [&](const std::string &value) { arg.emplace_back(value); };
   }
 
-  void add_argument(const std::string &name, std::string &arg, const std::string &default_value) {
+  void add_argument(char short_name, const std::string &name, std::string &arg, const std::string &default_value) {
     arg = default_value;
-    arguments_[name] = [&](const std::string &value) { arg = value; };
+    arguments_[std::string(1, short_name)] = arguments_[name] = [&](const std::string &value) { arg = value; };
   }
 
   void parse(int32_t argc, char **argv) {
@@ -56,15 +58,13 @@ class Cmdline {
         continue;
       }
 
-      std::string arg;
       for (i++; i < argc; i++) {
         if (argv[i][0] == '-') {
           i--;
           break;
         }
-        arg += argv[i];
+        it->second(argv[i]);
       }
-      it->second(arg);
     }
   }
 
