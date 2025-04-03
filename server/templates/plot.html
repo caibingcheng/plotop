@@ -29,11 +29,26 @@
             background-color: #f8f8f8;
             padding: 5px;
         }
+
+        .updated-row {
+            animation: flash 0.5s ease-in-out;
+        }
+
+        @keyframes flash {
+            0% {
+                background-color: #efefef;
+            }
+
+            100% {
+                background-color: transparent;
+            }
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/system_memory.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 确保 Chart.js 在前 -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script> <!-- 确保适配器在后 -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas"></script> <!-- 添加 html2canvas 库 -->
     <script type="text/javascript">
         function getStepSize(duration) {
             if (duration <= 10) return 1; // 10s -> 1s
@@ -111,7 +126,7 @@
             return { avg, min, max, stdDev };
         }
 
-        function updateStatistics(chart, stats_container_id) {
+        function updateStatistics(chart, stats_container_id, flash = false) {
             const datasets = chart.data.datasets;
             const stats_container = document.getElementById(stats_container_id);
 
@@ -135,13 +150,23 @@
 
             function renderTable() {
                 const sortedData = [...stats_data].sort((a, b) => {
-                    const aValue = isNaN(parseFloat(a[sortColumn])) ? a[sortColumn] : parseFloat(a[sortColumn]);
-                    const bValue = isNaN(parseFloat(b[sortColumn])) ? b[sortColumn] : parseFloat(b[sortColumn]);
+                    const a_list = String(a[sortColumn]).split(' ');
+                    const b_list = String(b[sortColumn]).split(' ');
+                    const a_values = a_list.map(item => isNaN(parseFloat(item)) ? item : parseFloat(item));
+                    const b_values = b_list.map(item => isNaN(parseFloat(item)) ? item : parseFloat(item));
 
                     if (sortOrder === 'asc') {
-                        return aValue > bValue ? 1 : -1;
+                        for (let i = 0; i < a_values.length; i++) {
+                            if (a_values[i] < b_values[i]) return -1;
+                            if (a_values[i] > b_values[i]) return 1;
+                        }
+                        return 0;
                     } else {
-                        return aValue < bValue ? 1 : -1;
+                        for (let i = 0; i < a_values.length; i++) {
+                            if (a_values[i] > b_values[i]) return -1;
+                            if (a_values[i] < b_values[i]) return 1;
+                        }
+                        return 0;
                     }
                 });
 
@@ -160,8 +185,20 @@
                 `;
 
                 sortedData.forEach(row => {
+                    const existingRow = stats_container.querySelector(`tr[data-metric="${row.metric}"]`);
+                    const isUpdated = flash && (!existingRow ||
+                        existingRow.getAttribute('data-avg') !== row.avg ||
+                        existingRow.getAttribute('data-min') !== row.min ||
+                        existingRow.getAttribute('data-max') !== row.max ||
+                        existingRow.getAttribute('data-stdDev') !== row.stdDev);
+
                     stats_html += `
-                        <tr>
+                        <tr class="${isUpdated ? 'updated-row' : ''}"
+                            data-metric="${row.metric}"
+                            data-avg="${row.avg}"
+                            data-min="${row.min}"
+                            data-max="${row.max}"
+                            data-stdDev="${row.stdDev}">
                             <td>${row.metric}</td>
                             <td>${row.avg}</td>
                             <td>${row.min}</td>
@@ -482,6 +519,18 @@
             }
         }
 
+        function exportPageAsPNG() {
+            const configElement = document.getElementById('config');
+            configElement.style.display = 'none'; // 隐藏 config 部分
+            html2canvas(document.body).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'exported_page.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                configElement.style.display = ''; // 恢复 config 部分
+            });
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
             var socket = io.connect('http://' + document.domain + ':' + location.port);
             var ip = "{{ ip }}";
@@ -596,6 +645,8 @@
                 is_paused = !is_paused;
                 this.textContent = is_paused ? "Resume Chart" : "Pause Chart";
             });
+
+            document.getElementById("exportPage").addEventListener("click", exportPageAsPNG); // 绑定导出事件
         });
 
         function initSystemCharts(metrics) {
@@ -956,6 +1007,7 @@
             value="used_memory,cpu_usage,cpu_cores">
         <button id="updateChart">Update Chart</button>
         <button id="pauseChart">Pause Chart</button>
+        <button id="exportPage">Export as PNG</button> <!-- 添加导出按钮 -->
     </div>
     <pre id="content"></pre>
 </body>
