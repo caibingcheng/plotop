@@ -145,3 +145,7 @@ def main():
     # 禁用开发服务器的警告日志
     socketio.run(app, host='127.0.0.1', port=5000,
                  use_reloader=False, log_output=False)
+
+
+if __name__ == "__main__":
+    main()
