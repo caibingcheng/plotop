@@ -41,7 +41,12 @@ class Interval {
     while (!stop_) {
       now_ = std::chrono::system_clock::now();
       if (now_ >= next_time_) {
-        task_();
+        try {
+          task_();
+        } catch (const std::exception &e) {
+          Log::error("Error accurred: ", e.what());
+          return;
+        }
         last_time_ = now_;
         next_time_ = last_time_ + std::chrono::seconds(interval_ms_);
       }

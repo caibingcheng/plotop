@@ -20,12 +20,13 @@ class Network::ImplNetwork {
  public:
   void send(const std::string &data) {
     if (sock_ < 0) {
-      Log::error("Failed to send data");
-      return;
+      Log::error("Socket not connected");
+      throw std::runtime_error("Socket not connected");
     }
 
-    if (::send(sock_, data.c_str(), data.size(), 0) < 0) {
+    if (::send(sock_, data.c_str(), data.size(), MSG_NOSIGNAL) < 0) {
       Log::error("Failed to send data ", errno);
+      throw std::runtime_error("Failed to send data " + std::to_string(errno));
     }
   }
 

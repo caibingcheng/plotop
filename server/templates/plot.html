@@ -30,6 +30,10 @@
             padding: 5px;
         }
 
+        #content {
+            margin-top: 2rem;
+        }
+
         .updated-row {
             animation: flash 0.5s ease-in-out;
         }
@@ -45,7 +49,6 @@
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/system_memory.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 确保 Chart.js 在前 -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script> <!-- 确保适配器在后 -->
     <script src="https://cdn.jsdelivr.net/npm/html2canvas"></script> <!-- 添加 html2canvas 库 -->
@@ -338,7 +341,7 @@
                                         let thread_cpu_total = thread.cpu_user + thread.cpu_system;
                                         let prev_thread_cpu_total = prev_process.threads[l].cpu_user + prev_process.threads[l].cpu_system;
                                         let thread_cpu_cost = thread_cpu_total - prev_thread_cpu_total;
-                                        let summary_thread_cpu_usage = thread_cpu_cost / cpu_cost * 100;
+                                        let summary_thread_cpu_usage = thread_cpu_cost / cpu_cost * 100 * cpu_cores.length;
 
                                         threads.push({
                                             tid: thread_tid,
@@ -398,7 +401,7 @@
                 return null;
             },
             filtered(now) {
-                const filtered_data = this.data.filter(item => (now - item.timestamp) / 1000 <= this.duration);
+                const filtered_data = this.data.filter(item => (now - item.timestamp) / 1000 <= this.duration + 10);
 
                 // 多显示一个数据点
                 const extended_data = [...filtered_data];
@@ -427,18 +430,14 @@
             stats_container.id = `${ctx.id}_stats`;
             stats_container.style.fontSize = '14px';
 
-            if (is_system_chart) {
-                const first_canvas = document.querySelector('canvas');
-                if (first_canvas) {
-                    first_canvas.parentNode.insertBefore(ctx, first_canvas);
-                    first_canvas.parentNode.insertBefore(stats_container, first_canvas);
-                } else {
-                    document.body.insertBefore(ctx, document.getElementById('content'));
-                    document.body.insertBefore(stats_container, document.getElementById('content'));
-                }
+            let content = document.getElementById("content");
+            const first_canvas = document.querySelector('canvas');
+            if (is_system_chart && first_canvas) {
+                first_canvas.parentNode.insertBefore(ctx, first_canvas);
+                first_canvas.parentNode.insertBefore(stats_container, first_canvas);
             } else {
-                document.body.insertBefore(ctx, document.getElementById('content'));
-                document.body.insertBefore(stats_container, document.getElementById('content'));
+                content.appendChild(ctx);
+                content.appendChild(stats_container);
             }
 
             var chart = new Chart(ctx, getCommonChartConfig(y_axis_label, data_storage.duration));
@@ -515,6 +514,10 @@
                         const thread_data = process ? process.threads.find(t => t.tid == thread) : null;
                         return thread_data ? thread_data.cpu_usage : null;
                     });
+                    const process_exist = extended_data[extended_data.length - 1].processes.some(p => p.pid == pid);
+                    if (!process_exist) {
+                        updateChart();
+                    }
                 }
             }
         }
@@ -529,6 +532,17 @@
                 link.click();
                 configElement.style.display = ''; // 恢复 config 部分
             });
+        }
+
+        function updateChart() {
+            const input = document.getElementById("metricsInput").value;
+            const metrics = input.split(',').map(metric => metric.trim()).filter(metric => metric);
+
+            initSystemCharts(metrics);
+            initProcessCharts(metrics);
+
+            // 更新统计数据
+            updateAllStatistics();
         }
 
         document.addEventListener("DOMContentLoaded", function () {
@@ -593,16 +607,7 @@
                 after_clear = true;
             });
 
-            document.getElementById("updateChart").addEventListener("click", function () {
-                const input = document.getElementById("metricsInput").value;
-                const metrics = input.split(',').map(metric => metric.trim()).filter(metric => metric);
-
-                initSystemCharts(metrics);
-                initProcessCharts(metrics);
-
-                // 更新统计数据
-                updateAllStatistics();
-            });
+            document.getElementById("updateChart").addEventListener("click", updateChart);
 
             document.getElementById("durationSelect").addEventListener("change", function () {
                 const selected_duration = parseInt(this.value, 10);
@@ -655,6 +660,7 @@
             const system_cores_metrics = ["cpu_cores"];
 
             // 检查是否需要创建或移除系统核图表
+            let need_update_system_cores = false;
             const has_system_cores_metrics = metrics.some(metric => system_cores_metrics.includes(metric));
             if (has_system_cores_metrics && !system_charts['system_cores']) {
                 const [system_cores_chart, system_cores_ctx, stats_id] = addChart('System Cores', 'CPU Cores(%)', true);
@@ -663,6 +669,7 @@
                     ctx: system_cores_ctx,
                     stats_id: stats_id
                 };
+                need_update_system_cores = true;
             } else if (!has_system_cores_metrics && system_charts['system_cores']) {
                 const system_cores = system_charts['system_cores'].chart;
                 system_cores.destroy();
@@ -678,9 +685,11 @@
                 }
 
                 delete system_charts['system_cores'];
+                need_update_system_cores = false;
             }
 
             // 检查是否需要创建或移除系统 CPU 图表
+            let need_update_system_cpu = false;
             const has_system_cpu_metrics = metrics.some(metric => system_cpu_metrics.includes(metric));
             if (has_system_cpu_metrics && !system_charts['system_cpu']) {
                 const [system_cpu_chart, system_cpu_ctx, stats_id] = addChart('System CPU', 'CPU(%)', true);
@@ -689,6 +698,7 @@
                     ctx: system_cpu_ctx,
                     stats_id: stats_id
                 };
+                need_update_system_cpu = true;
             } else if (!has_system_cpu_metrics && system_charts['system_cpu']) {
                 const system_cpu = system_charts['system_cpu'].chart;
                 system_cpu.destroy();
@@ -704,9 +714,11 @@
                 }
 
                 delete system_charts['system_cpu'];
+                need_update_system_cpu = false;
             }
 
             // 检查是否需要创建或移除系统内存图表
+            let need_update_system_memory = false;
             const has_system_memory_metrics = metrics.some(metric => system_memory_metrics.includes(metric));
             if (has_system_memory_metrics && !system_charts['system_memory']) {
                 const [system_memory_chart, system_memory_ctx, stats_id] = addChart('System Memory', 'Memory(MB)', true);
@@ -715,6 +727,7 @@
                     ctx: system_memory_ctx,
                     stats_id: stats_id
                 };
+                need_update_system_memory = true;
             } else if (!has_system_memory_metrics && system_charts['system_memory']) {
                 const system_memory = system_charts['system_memory'].chart;
                 system_memory.destroy();
@@ -730,10 +743,11 @@
                 }
 
                 delete system_charts['system_memory'];
+                need_update_system_memory = false;
             }
 
             // 更新系统内存图表数据
-            if (system_charts['system_memory']) {
+            if (system_charts['system_memory'] && need_update_system_memory) {
                 const system_memory = system_charts['system_memory'].chart;
                 system_memory.data.datasets = [];
                 const now = data_storage.last() ? data_storage.last().timestamp : Date.now();
@@ -768,7 +782,7 @@
             }
 
             // 更新系统 CPU 图表数据
-            if (system_charts['system_cpu']) {
+            if (system_charts['system_cpu'] && need_update_system_cpu) {
                 const system_cpu = system_charts['system_cpu'].chart;
                 system_cpu.data.datasets = [];
                 const now = data_storage.last() ? data_storage.last().timestamp : Date.now();
@@ -803,7 +817,7 @@
             }
 
             // 更新系统核图表数据
-            if (system_charts['system_cores']) {
+            if (system_charts['system_cores'] && need_update_system_cores) {
                 const system_cores = system_charts['system_cores'].chart;
                 system_cores.data.datasets = [];
                 const now = data_storage.last() ? data_storage.last().timestamp : Date.now();
@@ -1009,7 +1023,7 @@
         <button id="pauseChart">Pause Chart</button>
         <button id="exportPage">Export as PNG</button> <!-- 添加导出按钮 -->
     </div>
-    <pre id="content"></pre>
+    <div id="content"></div>
 </body>
 
 </html>

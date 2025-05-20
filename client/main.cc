@@ -27,6 +27,7 @@ int32_t main(int32_t argc, char **argv) {
   cmdline.parse(argc, argv);
   Log::set_level(static_cast<Log::Level>(args.level));
 
+  static uint64_t retry_count = 0;
   do {
     std::unique_ptr<Packet> packet(new Packet());
     std::unique_ptr<Network> network(new Network(args.address, args.port));
@@ -39,6 +40,8 @@ int32_t main(int32_t argc, char **argv) {
 
       interval.wait();
     }
+
+    Log::info("Retrying ", ++retry_count, " times");
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   } while (true);
 
