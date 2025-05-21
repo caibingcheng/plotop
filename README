@@ -1,0 +1,79 @@
+# Plotop 数据采集与展示系统
+
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![Flask](https://img.shields.io/badge/Flask-2.0+-green.svg)
+![C++17](https://img.shields.io/badge/C++-17-red.svg)
+
+## 项目概述
+
+Plotop 是一个基础数据采集与展示系统，当前已实现以下核心组件：
+
+- **C++17 客户端**：实现基础网络数据采集
+- **Python Flask 服务端**：提供REST API基础框架
+- **Web界面**：实时数据图表展示
+
+## 主要功能
+
+✅ 基础HTTP数据采集
+✅ 简单数据缓存处理
+✅ 静态图表展示
+🚧 数据异常检测（原型阶段）
+🚧 可视化配置界面（开发中）
+⚠️ WebSocket支持（暂未实现）
+
+## 快速开始
+
+### 环境要求
+- Python 3.8+
+- C++17 兼容编译器
+- CMake 3.12+
+
+### 安装步骤
+
+```bash
+# 克隆仓库
+git clone https://github.com/caibingcheng/plotop.git
+cd plotop
+
+# 安装Python依赖
+pip install -r requirements.txt
+
+# 编译客户端
+make
+```
+
+### 启动服务
+```bash
+# 启动服务端
+python -m server
+
+# 运行客户端
+./plotop -i <server_ip> -p <server_port> -d <interval_seconds>
+```
+
+## 项目结构
+```
+plotop/
+├── client/            # C++客户端代码
+│   ├── linux/         # 平台特定实现
+│   ├── network.cc     # 网络通信模块
+│   └── packet.h       # 数据包协议定义
+├── server/            # Python服务端
+│   ├── app.py         # Flask主程序
+│   └── templates/     # 网页模板
+├── makefile           # 构建配置
+├── requirments.txt    # Python依赖
+└── setup.py           # 打包配置
+```
+
+
+## 贡献指南
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/your-feature`)
+3. 提交修改 (`git commit -am 'Add some feature'`)
+4. 推送分支 (`git push origin feature/your-feature`)
+5. 创建Pull Request
+
+## 许可证
+[MIT License](LICENSE)

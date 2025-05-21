@@ -1,0 +1,55 @@
+name: Release Build
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+      fail-fast: false
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup toolchain
+      run: |
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu
+          export CROSSCOMPILER="aarch64-linux-gnu-"
+        else
+          sudo apt-get install -y g++ make
+          export CROSSCOMPILER=""
+        fi
+
+    - name: Build binary
+      run: |
+        make clean
+        make CROSSCOMPILER="$CROSSCOMPILER"
+        mv plotop plotop-${{ matrix.arch }}
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./plotop-${{ matrix.arch }}
+        asset_name: plotop-${{ matrix.arch }}
+        asset_content_type: application/octet-stream
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
