@@ -33,9 +33,24 @@ jobs:
         make CROSSCOMPILER="$CROSSCOMPILER"
         mv plotop plotop-${{ matrix.arch }}
 
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: plotop-${{ matrix.arch }}
+        path: plotop-${{ matrix.arch }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
     - name: Create Release
       id: create_release
-      if: startsWith(github.ref, 'refs/tags/')
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,20 +60,11 @@ jobs:
         draft: false
         prerelease: false
 
-    - name: Upload Release Asset
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./plotop-${{ matrix.arch }}
-        asset_name: plotop-${{ matrix.arch }}
-        asset_content_type: application/octet-stream
-
-    - name: Upload Build Artifact
-      if: github.ref == 'refs/heads/master'
-      uses: actions/upload-artifact@v4
-      with:
-        name: plotop-${{ matrix.arch }}
-        path: plotop-${{ matrix.arch }}
+    - name: Upload Release Assets
+      run: |
+        for asset in artifacts/*; do
+          echo "Uploading $asset"
+          gh release upload ${{ github.ref }} "$asset" \
+            --repo ${{ github.repository }} \
+            --clobber
+        done
