@@ -39,32 +39,41 @@ jobs:
         name: plotop-${{ matrix.arch }}
         path: plotop-${{ matrix.arch }}
 
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-22.04
-    steps:
-    - name: Download All Artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
+    - name: Check artifacts
+      run: |
+        echo "Artifacts:"
+        ls -l plotop-${{ matrix.arch }}
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
+  release:
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: ${{ github.ref }}
+
+    - name: Download Artifact
+      uses: actions/download-artifact@v4
+
+    - name: Show files
+      run: |
+        ls -lh
+
+    - name: Zip files
+      run: |
+        zip -r plotop-x86_64.zip plotop-x86_64
+        zip -r plotop-arm64.zip plotop-arm64
+    - name: Create Release and Upload Assets
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
-
-    - name: Upload Release Assets
-      run: |
-        for asset in artifacts/*; do
-          echo "Uploading $asset"
-          gh release upload ${{ github.ref }} "$asset" \
-            --repo ${{ github.repository }} \
-            --clobber
-        done
+        name: Release ${{ github.ref }}
+        generate_release_notes: true
+        files: |
+          plotop-x86_64.zip
+          plotop-arm64.zip
