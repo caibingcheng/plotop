@@ -6,7 +6,13 @@ with open("requirements.txt") as f:
 setup(
     name="plotop",
     version="0.1.0",
-    packages=find_packages(include=["server", "server.*"]),
+    packages=find_packages(include=["server", "server.*", "server.templates", "server.templates.*"]),
+    package_data={
+        "server": [
+            "templates/*.html",
+            "templates/*/*.html"
+        ]
+    },
     install_requires=requirements,
     entry_points={
         "console_scripts": [
