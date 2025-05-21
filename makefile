@@ -5,10 +5,10 @@ CROSSCOMPILER ?=
 CXX := $(CROSSCOMPILER)g++
 
 # Compiler flags
-CXXFLAGS := -std=c++17 -Wall
+CXXFLAGS := -std=c++17 -Wall -static
 
 # Linker flags
-LDFLAGS := -lstdc++fs -pthread
+LDFLAGS := -lstdc++fs -pthread -static-libstdc++ -static-libgcc
 
 INC := -Iclient/${PLATFORM} -Iclient
 
