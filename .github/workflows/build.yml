@@ -64,16 +64,16 @@ jobs:
 
     - name: Zip files
       run: |
-        zip -r plotop-x86_64.zip plotop-x86_64
-        zip -r plotop-arm64.zip plotop-arm64
+        for arch in x86_64 arm64; do
+          zip -r plotop-${{ github.ref_name }}-$arch.zip plotop-$arch
+        done
     - name: Create Release and Upload Assets
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref }}
-        name: Release ${{ github.ref }}
+        name: Release ${{ github.ref_name }}
         generate_release_notes: true
         files: |
-          plotop-x86_64.zip
-          plotop-arm64.zip
+          plotop-${{ github.ref_name }}-*.zip
