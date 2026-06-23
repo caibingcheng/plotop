@@ -10,7 +10,7 @@ from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/static', static_folder='../statics')
 app.logger.setLevel(logging.INFO)
 socketio = SocketIO(app, cors_allowed_origins="*",
                     ping_interval=1, ping_timeout=5, async_mode="threading")
@@ -31,8 +31,8 @@ def handle_client(client_socket, addr):
         client_data_sequence[client_ip] += 1
     client_data[client_ip] = []
     client_alive[client_ip] = True
-    if client_ip not in client_subscribed:
-        client_subscribed[client_ip] = (0, None)
+    # Reset subscription window on every new raw socket connection
+    client_subscribed[client_ip] = (10, datetime.now())
 
     socketio.emit(f'clear/{client_ip}', {})
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

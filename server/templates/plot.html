@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <title>Plot Data</title>
     <style>
         body {
@@ -109,6 +110,75 @@
             100% {
                 background-color: transparent;
             }
+        }
+
+        .waiting-overlay {
+            display: flex;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.85);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            opacity: 1;
+            transition: opacity 0.4s ease;
+        }
+
+        .waiting-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .waiting-dots {
+            position: relative;
+            width: 64px;
+            height: 64px;
+        }
+
+        .waiting-dots span {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 8px;
+            margin-top: -4px;
+            margin-left: -4px;
+            border-radius: 50%;
+            background-color: #4CAF50;
+            transform: rotate(var(--angle)) translate(22px);
+            animation: waiting-pulse 2.4s ease-in-out infinite;
+            animation-delay: var(--delay);
+        }
+
+        .waiting-dots span:nth-child(1) { --angle: 0deg; --delay: 0s; }
+        .waiting-dots span:nth-child(2) { --angle: 45deg; --delay: -0.3s; }
+        .waiting-dots span:nth-child(3) { --angle: 90deg; --delay: -0.6s; }
+        .waiting-dots span:nth-child(4) { --angle: 135deg; --delay: -0.9s; }
+        .waiting-dots span:nth-child(5) { --angle: 180deg; --delay: -1.2s; }
+        .waiting-dots span:nth-child(6) { --angle: 225deg; --delay: -1.5s; }
+        .waiting-dots span:nth-child(7) { --angle: 270deg; --delay: -1.8s; }
+        .waiting-dots span:nth-child(8) { --angle: 315deg; --delay: -2.1s; }
+
+        @keyframes waiting-pulse {
+            0%, 100% {
+                opacity: 0.25;
+                transform: rotate(var(--angle)) translate(22px) scale(1);
+            }
+            50% {
+                opacity: 1;
+                transform: rotate(var(--angle)) translate(22px) scale(1.3);
+            }
+        }
+
+        .waiting-text {
+            margin-top: 18px;
+            font-size: 16px;
+            color: #555;
+            letter-spacing: 0.5px;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
@@ -615,7 +685,32 @@
             var after_clear = false; // 标记是否在 clear 后收到数据
             var is_paused = false; // 标记图表是否暂停
 
-            socket.emit('subscribe', { ip: ip });
+            function hideWaitingOverlay() {
+                const overlay = document.getElementById('waitingOverlay');
+                if (overlay && !overlay.classList.contains('hidden')) {
+                    overlay.classList.add('hidden');
+                    setTimeout(() => {
+                        overlay.style.display = 'none';
+                    }, 400);
+                }
+            }
+
+            function showWaitingOverlay() {
+                const overlay = document.getElementById('waitingOverlay');
+                if (overlay) {
+                    overlay.style.display = 'flex';
+                    overlay.classList.remove('hidden');
+                }
+            }
+
+            function subscribe() {
+                socket.emit('subscribe', { ip: ip });
+            }
+
+            socket.on('connect', function () {
+                console.log('socket connected, subscribing', ip);
+                subscribe();
+            });
 
             socket.on('new_data/' + ip, function (data) {
                 let stat = JSON.parse(data.data);
@@ -625,6 +720,7 @@
                 if ((!first_data_received || after_clear) && (data_storage.length() > 0)) {
                     first_data_received = true;
                     after_clear = false;
+                    hideWaitingOverlay();
                     updateChart();
                 }
 
@@ -641,7 +737,7 @@
                 updateAllStatistics();
 
                 // keep alive
-                socket.emit('subscribe', { ip: ip });
+                subscribe();
             });
 
             socket.on('clear/' + ip, function () {
@@ -668,6 +764,8 @@
 
                 // 标记为 clear 后的状态
                 after_clear = true;
+                first_data_received = false;
+                showWaitingOverlay();
             });
 
             const metricsInput = document.getElementById("metricsInput");
@@ -1124,6 +1222,14 @@
         <button id="exportPage">Export as PNG</button> <!-- 添加导出按钮 -->
     </div>
     <div id="content"></div>
+
+    <div id="waitingOverlay" class="waiting-overlay">
+        <div class="waiting-dots">
+            <span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span>
+        </div>
+        <div class="waiting-text">Waiting for the first data packet...</div>
+    </div>
 
     <div id="metricsModal" class="modal-overlay">
         <div class="modal-container">

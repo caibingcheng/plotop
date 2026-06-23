@@ -28,10 +28,12 @@ int32_t main(int32_t argc, char **argv) {
   Log::set_level(static_cast<Log::Level>(args.level));
 
   static uint64_t retry_count = 0;
+  uint64_t retry_ms = 100;
   do {
     std::unique_ptr<Packet> packet(new Packet());
     std::unique_ptr<Network> network(new Network(args.address, args.port));
     if (network->ready()) {
+      retry_ms = 100;
       Interval interval(args.duration, [&]() {
         Stats stats;
         packet->collate(stats, args.patterns);
@@ -42,7 +44,8 @@ int32_t main(int32_t argc, char **argv) {
     }
 
     Log::info("Retrying ", ++retry_count, " times");
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(retry_ms));
+    retry_ms = std::min(retry_ms * 2, static_cast<uint64_t>(5000));
   } while (true);
 
   return 0;
