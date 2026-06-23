@@ -1,5 +1,6 @@
 #include "packet.h"
 
+#include <algorithm>
 #include <dirent.h>
 
 #include <cstdint>
@@ -112,10 +113,11 @@ class Packet::ImplPacket {
   ~ImplPacket() {}
 
  public:
-  void collate(Stats &stats, const std::list<std::string> &patterns) {
+  void collate(Stats &stats, const std::list<std::string> &patterns,
+               const std::list<int32_t> &pids) {
     stats.total_memory = get_total_memory_();
     stats.free_memory = get_free_memory_();
-    stats.processes = get_processes_(patterns);
+    stats.processes = get_processes_(patterns, pids);
     auto summary_cpu = get_cpu_usage_();
     for (const auto &cpu : summary_cpu) {
       stats.cpu_user.push_back(cpu.user);
@@ -287,7 +289,8 @@ class Packet::ImplPacket {
 
     return threads;
   }
-  std::list<Process> get_processes_(const std::list<std::string> &patterns) {
+  std::list<Process> get_processes_(const std::list<std::string> &patterns,
+                                    const std::list<int32_t> &pids) {
     std::list<Process> processes;
     for (const auto pid : get_pids_()) {
       try {
@@ -302,8 +305,11 @@ class Packet::ImplPacket {
         }
 
         std::string name(stat.comm);
-        auto pattern_match = [&](const std::string &pattern) { return name.find(pattern) != std::string::npos; };
-        const bool match = patterns.empty() || std::any_of(patterns.begin(), patterns.end(), pattern_match);
+        auto name_match = [&](const std::string &pattern) { return name.find(pattern) != std::string::npos; };
+        auto pid_match = [&](int32_t filter_pid) { return pid == filter_pid; };
+        const bool match = (patterns.empty() && pids.empty()) ||
+                           std::any_of(patterns.begin(), patterns.end(), name_match) ||
+                           std::any_of(pids.begin(), pids.end(), pid_match);
         if (!match) {
           continue;
         }
@@ -357,4 +363,7 @@ class Packet::ImplPacket {
 Packet::Packet() : impl_(new ImplPacket()) {}
 Packet::~Packet() {}
 
-void Packet::collate(Stats &stats, const std::list<std::string> &patterns) { impl_->collate(stats, patterns); }
+void Packet::collate(Stats &stats, const std::list<std::string> &patterns,
+                     const std::list<int32_t> &pids) {
+  impl_->collate(stats, patterns, pids);
+}

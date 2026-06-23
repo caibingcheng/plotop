@@ -67,6 +67,15 @@ python -m server
 
 # 运行客户端
 ./plotop -i <server_ip> -p <server_port> -d <interval_seconds>
+
+# 按进程名过滤
+./plotop -i <server_ip> -p <server_port> -d <interval_seconds> -P <process_name>
+
+# 按 PID 过滤（可多次指定）
+./plotop -i <server_ip> -p <server_port> -d <interval_seconds> -I <pid1> -I <pid2>
+
+# 查看帮助
+./plotop --help
 ```
 
 ### 项目结构

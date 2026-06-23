@@ -77,7 +77,7 @@ class Packet {
   ~Packet();
 
  public:
-  void collate(Stats &, const std::list<std::string> &);
+  void collate(Stats &, const std::list<std::string> &, const std::list<int32_t> &);
 
  public:
   std::string to_json(const Stats &stats) const {
