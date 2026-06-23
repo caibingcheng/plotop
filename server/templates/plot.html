@@ -34,6 +34,69 @@
             margin-top: 2rem;
         }
 
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-container h3 {
+            margin-top: 0;
+        }
+
+        .modal-textarea {
+            width: 100%;
+            min-height: 200px;
+            font-family: monospace;
+            font-size: 14px;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+
+        .modal-hints {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .modal-hints code {
+            background-color: #e0e0e0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+
+        .modal-buttons {
+            margin-top: 15px;
+            text-align: right;
+        }
+
+        .modal-buttons button {
+            margin-left: 10px;
+        }
+
         .updated-row {
             animation: flash 0.5s ease-in-out;
         }
@@ -536,7 +599,7 @@
 
         function updateChart() {
             const input = document.getElementById("metricsInput").value;
-            const metrics = input.split(',').map(metric => metric.trim()).filter(metric => metric);
+            const metrics = input.split(/[\n,]+/).map(metric => metric.trim()).filter(metric => metric);
 
             initSystemCharts(metrics);
             initProcessCharts(metrics);
@@ -562,7 +625,7 @@
                 if ((!first_data_received || after_clear) && (data_storage.length() > 0)) {
                     first_data_received = true;
                     after_clear = false;
-                    document.getElementById("updateChart").click();
+                    updateChart();
                 }
 
                 if (!is_paused && data_storage.length() > 0) {
@@ -607,7 +670,45 @@
                 after_clear = true;
             });
 
-            document.getElementById("updateChart").addEventListener("click", updateChart);
+            const metricsInput = document.getElementById("metricsInput");
+            const metricsModal = document.getElementById("metricsModal");
+            const metricsModalInput = document.getElementById("metricsModalInput");
+            const metricsModalOk = document.getElementById("metricsModalOk");
+            const metricsModalCancel = document.getElementById("metricsModalCancel");
+
+            function openMetricsModal() {
+                metricsModalInput.value = metricsInput.value.replace(/,/g, ',\n');
+                metricsModal.style.display = 'flex';
+                metricsModalInput.focus();
+            }
+
+            function closeMetricsModal() {
+                metricsModal.style.display = 'none';
+            }
+
+            function applyMetricsModal() {
+                const value = metricsModalInput.value;
+                const metrics = value.split(/[\n,]+/).map(metric => metric.trim()).filter(metric => metric);
+                metricsInput.value = metrics.join(',');
+                closeMetricsModal();
+                updateChart();
+            }
+
+            metricsInput.addEventListener("click", openMetricsModal);
+            metricsModalOk.addEventListener("click", applyMetricsModal);
+            metricsModalCancel.addEventListener("click", closeMetricsModal);
+
+            metricsModal.addEventListener("click", function (event) {
+                if (event.target === metricsModal) {
+                    closeMetricsModal();
+                }
+            });
+
+            document.addEventListener("keydown", function (event) {
+                if (event.key === "Escape" && metricsModal.style.display === 'flex') {
+                    closeMetricsModal();
+                }
+            });
 
             document.getElementById("durationSelect").addEventListener("change", function () {
                 const selected_duration = parseInt(this.value, 10);
@@ -1017,13 +1118,33 @@
             <option value="7200">2H</option>
         </select>
         <label for="metricsInput">Enter metrics (e.g., free_memory, used_memory):</label>
-        <input type="text" id="metricsInput" placeholder="Enter metrics separated by commas" ,
-            value="used_memory,cpu_usage,cpu_cores">
-        <button id="updateChart">Update Chart</button>
+        <input type="text" id="metricsInput" placeholder="Enter metrics separated by commas"
+            value="used_memory,cpu_usage,cpu_cores" readonly style="cursor: pointer;">
         <button id="pauseChart">Pause Chart</button>
         <button id="exportPage">Export as PNG</button> <!-- 添加导出按钮 -->
     </div>
     <div id="content"></div>
+
+    <div id="metricsModal" class="modal-overlay">
+        <div class="modal-container">
+            <h3>Enter Metrics</h3>
+            <textarea id="metricsModalInput" class="modal-textarea"
+                placeholder="Enter metrics separated by commas or new lines"></textarea>
+            <div class="modal-hints">
+                <strong>Examples:</strong><br>
+                System metrics:
+                <code>free_memory</code>, <code>used_memory</code>, <code>total_memory</code>,
+                <code>cpu_usage</code>, <code>cpu_idle</code>, <code>cpu_cores</code><br>
+                Process metrics:
+                <code>pid=&lt;pid&gt;</code>, <code>comm=&lt;process_name&gt;</code><br><br>
+                Multiple metrics can be separated by commas or new lines.
+            </div>
+            <div class="modal-buttons">
+                <button id="metricsModalCancel">Cancel</button>
+                <button id="metricsModalOk" style="background-color: #4CAF50; color: white;">OK</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
