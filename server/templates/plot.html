@@ -194,7 +194,9 @@
             if (duration <= 300) return 30; // 5min -> 30s
             if (duration <= 1800) return 180; // 30min -> 3min
             if (duration <= 3600) return 600; // 1H -> 10min
-            return 600; // 2H -> 10min
+            if (duration <= 7200) return 1200; // 2H -> 20min
+            if (duration <= 43200) return 3600; // 12H -> 1H
+            return 7200; // 24H -> 2H
         }
 
         function getCommonXAxisConfig(duration) {
@@ -513,9 +515,10 @@
 
                 this.data.push(parse_data);
 
-                while (this.data.length > 0 && (parse_data.timestamp - this.data[0].timestamp) / 1000 > 7200) {
-                    this.data.shift();
-                }
+            const max_keep = Math.max(7200, this.duration + 600);
+            while (this.data.length > 0 && (parse_data.timestamp - this.data[0].timestamp) / 1000 > max_keep) {
+                this.data.shift();
+            }
             },
             setDuration(duration) {
                 this.duration = duration;
@@ -725,16 +728,8 @@
                 }
 
                 if (!is_paused && data_storage.length() > 0) {
-                    const now = data_storage.last().timestamp;
-                    const extended_data = data_storage.filtered(now);
-                    const x_axis_labels = extended_data.map(item => (item.timestamp - now) / 1000 + data_storage.duration);
-
-                    // 更新所有图表数据
-                    updateAllCharts(extended_data, x_axis_labels);
+                    refreshChartsForCurrentDuration();
                 }
-
-                // 更新统计数据
-                updateAllStatistics();
 
                 // keep alive
                 subscribe();
@@ -808,41 +803,86 @@
                 }
             });
 
-            document.getElementById("durationSelect").addEventListener("change", function () {
-                const selected_duration = parseInt(this.value, 10);
-                data_storage.setDuration(selected_duration);
+            function refreshChartsForCurrentDuration() {
+                if (data_storage.length() === 0) {
+                    return;
+                }
+                const now = data_storage.last().timestamp;
+                const extended_data = data_storage.filtered(now);
+                const x_axis_labels = extended_data.map(item => (item.timestamp - now) / 1000 + data_storage.duration);
+                updateAllCharts(extended_data, x_axis_labels);
+                updateAllStatistics();
+            }
+
+            function updateDurationForCharts(duration) {
+                data_storage.setDuration(duration);
 
                 // 更新系统图表范围和刻度
                 if (system_charts['system_memory']) {
-                    system_charts['system_memory'].chart.options.scales.x = getCommonXAxisConfig(selected_duration);
-                    system_charts['system_memory'].chart.update();
+                    system_charts['system_memory'].chart.options.scales.x = getCommonXAxisConfig(duration);
                 }
                 if (system_charts['system_cpu']) {
-                    system_charts['system_cpu'].chart.options.scales.x = getCommonXAxisConfig(selected_duration);
-                    system_charts['system_cpu'].chart.update();
+                    system_charts['system_cpu'].chart.options.scales.x = getCommonXAxisConfig(duration);
                 }
                 if (system_charts['system_cores']) {
-                    system_charts['system_cores'].chart.options.scales.x = getCommonXAxisConfig(selected_duration);
-                    system_charts['system_cores'].chart.update();
+                    system_charts['system_cores'].chart.options.scales.x = getCommonXAxisConfig(duration);
                 }
 
                 // 更新进程图表范围和刻度
                 for (const pid in process_charts) {
                     const process_chart = process_charts[pid];
                     if (process_chart) {
-                        process_chart.memory.options.scales.x = getCommonXAxisConfig(selected_duration);
-                        process_chart.memory.update();
-
-                        process_chart.cpu.options.scales.x = getCommonXAxisConfig(selected_duration);
-                        process_chart.cpu.update();
-
-                        process_chart.thread_cpu.options.scales.x = getCommonXAxisConfig(selected_duration);
-                        process_chart.thread_cpu.update();
+                        process_chart.memory.options.scales.x = getCommonXAxisConfig(duration);
+                        process_chart.cpu.options.scales.x = getCommonXAxisConfig(duration);
+                        process_chart.thread_cpu.options.scales.x = getCommonXAxisConfig(duration);
                     }
                 }
 
-                // 更新统计数据
-                updateAllStatistics();
+                refreshChartsForCurrentDuration();
+            }
+
+            function getSelectedDuration() {
+                const durationSelect = document.getElementById("durationSelect");
+                const customWrapper = document.getElementById("customDurationWrapper");
+                if (durationSelect.value === "custom") {
+                    customWrapper.style.display = "inline";
+                    const value = parseFloat(document.getElementById("customDurationValue").value);
+                    const unit = document.getElementById("customDurationUnit").value;
+                    if (isNaN(value) || value <= 0) {
+                        return null;
+                    }
+                    if (unit === "hour") {
+                        return Math.round(value * 3600);
+                    }
+                    return Math.round(value * 60);
+                }
+                customWrapper.style.display = "none";
+                return parseInt(durationSelect.value, 10);
+            }
+
+            document.getElementById("durationSelect").addEventListener("change", function () {
+                const duration = getSelectedDuration();
+                if (duration !== null) {
+                    updateDurationForCharts(duration);
+                }
+            });
+
+            document.getElementById("customDurationValue").addEventListener("input", function () {
+                if (document.getElementById("durationSelect").value === "custom") {
+                    const duration = getSelectedDuration();
+                    if (duration !== null) {
+                        updateDurationForCharts(duration);
+                    }
+                }
+            });
+
+            document.getElementById("customDurationUnit").addEventListener("change", function () {
+                if (document.getElementById("durationSelect").value === "custom") {
+                    const duration = getSelectedDuration();
+                    if (duration !== null) {
+                        updateDurationForCharts(duration);
+                    }
+                }
             });
 
             document.getElementById("pauseChart").addEventListener("click", function () {
@@ -1214,7 +1254,17 @@
             <option value="1800">30min</option>
             <option value="3600">1H</option>
             <option value="7200">2H</option>
+            <option value="43200">12H</option>
+            <option value="86400">24H</option>
+            <option value="custom">Custom</option>
         </select>
+        <span id="customDurationWrapper" style="display:none; margin-left:8px;">
+            <input type="number" id="customDurationValue" min="1" value="1" style="width:60px;">
+            <select id="customDurationUnit">
+                <option value="min">min</option>
+                <option value="hour">hour</option>
+            </select>
+        </span>
         <label for="metricsInput">Enter metrics (e.g., free_memory, used_memory):</label>
         <input type="text" id="metricsInput" placeholder="Enter metrics separated by commas"
             value="used_memory,cpu_usage,cpu_cores" readonly style="cursor: pointer;">
