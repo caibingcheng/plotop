@@ -180,6 +180,97 @@
             color: #555;
             letter-spacing: 0.5px;
         }
+
+        .color-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        #content table tbody tr {
+            cursor: pointer;
+        }
+
+        .metric-hidden {
+            opacity: 0.5;
+        }
+
+        .metric-hidden .color-dot {
+            background-color: #999 !important;
+        }
+
+        .chart-wrapper {
+            margin-bottom: 1rem;
+        }
+
+        .chart-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 8px 0 4px 0;
+            color: #333;
+        }
+
+        .jump-menu {
+            position: fixed;
+            top: 50px;
+            right: 20px;
+            z-index: 100;
+            opacity: 0.6;
+            transition: opacity 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .jump-menu:hover,
+        .jump-menu.expanded {
+            opacity: 1;
+        }
+
+        .jump-menu-toggle {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .jump-menu-list {
+            display: none;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-top: 4px;
+            max-height: 60vh;
+            overflow-y: auto;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            min-width: 160px;
+        }
+
+        .jump-menu-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .jump-menu-item:last-child {
+            border-bottom: none;
+        }
+
+        .jump-menu-item:hover {
+            background-color: #f0f0f0;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 确保 Chart.js 在前 -->
@@ -237,6 +328,11 @@
                             tension: 0.4 // 设置线条的平滑度，0 为直线，1 为完全平滑
                         }
                     },
+                    plugins: {
+                        legend: {
+                            display: false // 隐藏默认图例，使用 statistics table 进行线条选择
+                        }
+                    },
                     scales: {
                         x: getCommonXAxisConfig(duration),
                         y: {
@@ -278,7 +374,9 @@
                     avg: stats.avg.toFixed(2),
                     min: stats.min.toFixed(2),
                     max: stats.max.toFixed(2),
-                    stdDev: stats.stdDev.toFixed(2)
+                    stdDev: stats.stdDev.toFixed(2),
+                    color: dataset.borderColor,
+                    hidden: !!dataset.hidden
                 };
             });
 
@@ -330,14 +428,19 @@
                         existingRow.getAttribute('data-max') !== row.max ||
                         existingRow.getAttribute('data-stdDev') !== row.stdDev);
 
+                    // 实时读取 dataset 的 hidden 状态，确保点击后表格立即刷新
+                    const dataset = datasets.find(d => d.label === row.metric);
+                    const isHidden = dataset ? !!dataset.hidden : row.hidden;
+
                     stats_html += `
-                        <tr class="${isUpdated ? 'updated-row' : ''}"
+                        <tr class="${isUpdated ? 'updated-row' : ''} ${isHidden ? 'metric-hidden' : ''}"
                             data-metric="${row.metric}"
                             data-avg="${row.avg}"
                             data-min="${row.min}"
                             data-max="${row.max}"
-                            data-stdDev="${row.stdDev}">
-                            <td>${row.metric}</td>
+                            data-stdDev="${row.stdDev}"
+                            title="点击隐藏/显示该线条">
+                            <td><span class="color-dot" style="background-color: ${row.color};"></span>${row.metric}</td>
                             <td>${row.avg}</td>
                             <td>${row.min}</td>
                             <td>${row.max}</td>
@@ -353,7 +456,7 @@
 
                 stats_container.innerHTML = stats_html;
 
-                // 添加点击事件监听器
+                // 添加表头排序事件监听器
                 const headers = stats_container.querySelectorAll('th');
                 headers.forEach(header => {
                     header.addEventListener('click', function () {
@@ -367,6 +470,20 @@
                         stats_container.dataset.sortColumn = sortColumn;
                         stats_container.dataset.sortOrder = sortOrder;
                         renderTable();
+                    });
+                });
+
+                // 添加行点击事件监听器，用于切换线条显示/隐藏
+                const rows = stats_container.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    row.addEventListener('click', function () {
+                        const metric = this.getAttribute('data-metric');
+                        const dataset = datasets.find(d => d.label === metric);
+                        if (dataset) {
+                            dataset.hidden = !dataset.hidden;
+                            chart.update();
+                            renderTable();
+                        }
                     });
                 });
             }
@@ -555,7 +672,15 @@
         var system_charts = {};
         var process_charts = {};
 
-        function addChart(name, y_axis_label, is_system_chart = false) {
+        function addChart(name, y_axis_label, is_system_chart = false, chart_title = null) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'chart-wrapper';
+            wrapper.id = 'chart-wrapper-' + name.replace(/[^a-zA-Z0-9]/g, '_');
+
+            const title = document.createElement('div');
+            title.className = 'chart-title';
+            title.textContent = chart_title || y_axis_label;
+
             var ctx = document.createElement('canvas');
             const random_id = Math.random().toString(36).substring(2, 15);
             ctx.id = name.replace(' ', '_') + random_id;
@@ -566,14 +691,16 @@
             stats_container.id = `${ctx.id}_stats`;
             stats_container.style.fontSize = '14px';
 
+            wrapper.appendChild(title);
+            wrapper.appendChild(ctx);
+            wrapper.appendChild(stats_container);
+
             let content = document.getElementById("content");
-            const first_canvas = document.querySelector('canvas');
-            if (is_system_chart && first_canvas) {
-                first_canvas.parentNode.insertBefore(ctx, first_canvas);
-                first_canvas.parentNode.insertBefore(stats_container, first_canvas);
+            const first_wrapper = document.querySelector('.chart-wrapper');
+            if (is_system_chart && first_wrapper) {
+                content.insertBefore(wrapper, first_wrapper);
             } else {
-                content.appendChild(ctx);
-                content.appendChild(stats_container);
+                content.appendChild(wrapper);
             }
 
             var chart = new Chart(ctx, getCommonChartConfig(y_axis_label, data_storage.duration));
@@ -679,6 +806,68 @@
 
             // 更新统计数据
             updateAllStatistics();
+
+            // 图表结构变化后刷新跳转菜单
+            refreshJumpMenu();
+        }
+
+        function refreshJumpMenu() {
+            const list = document.getElementById('jumpMenuList');
+            const toggle = document.getElementById('jumpMenuToggle');
+            if (!list || !toggle) return;
+
+            const wrappers = document.querySelectorAll('.chart-wrapper');
+            let html = '';
+            wrappers.forEach(wrapper => {
+                const title = wrapper.querySelector('.chart-title');
+                if (title) {
+                    html += `<div class="jump-menu-item" data-target="${wrapper.id}">${title.textContent}</div>`;
+                }
+            });
+            list.innerHTML = html;
+
+            const items = list.querySelectorAll('.jump-menu-item');
+            items.forEach(item => {
+                item.addEventListener('click', function () {
+                    const targetId = this.getAttribute('data-target');
+                    const target = document.getElementById(targetId);
+                    if (target) {
+                        // 留出顶部 config 栏的偏移，避免 title 被遮挡
+                        const offset = 70;
+                        const top = target.getBoundingClientRect().top + window.pageYOffset - offset;
+                        window.scrollTo({ top: top, behavior: 'smooth' });
+                    }
+                    list.style.display = 'none';
+                    document.getElementById('jumpMenu').classList.remove('expanded');
+                });
+            });
+
+            // 绑定展开/折叠按钮事件（只绑定一次）
+            if (!toggle.dataset.bound) {
+                const menu = document.getElementById('jumpMenu');
+                toggle.addEventListener('click', function (event) {
+                    event.stopPropagation();
+                    if (list.style.display === 'none' || !list.style.display) {
+                        refreshJumpMenu();
+                        list.style.display = 'block';
+                        menu.classList.add('expanded');
+                    } else {
+                        list.style.display = 'none';
+                        menu.classList.remove('expanded');
+                    }
+                });
+
+                // 点击菜单外部区域折叠菜单
+                document.addEventListener('click', function (event) {
+                    if (menu.contains(event.target)) return;
+                    if (list.style.display === 'block') {
+                        list.style.display = 'none';
+                        menu.classList.remove('expanded');
+                    }
+                });
+
+                toggle.dataset.bound = 'true';
+            }
         }
 
         document.addEventListener("DOMContentLoaded", function () {
@@ -913,14 +1102,8 @@
                 const system_cores = system_charts['system_cores'].chart;
                 system_cores.destroy();
                 const system_cores_ctx = system_charts['system_cores'].ctx;
-                if (system_cores_ctx && system_cores_ctx.parentNode) {
-                    system_cores_ctx.parentNode.removeChild(system_cores_ctx);
-                }
-
-                const system_cores_stats_id = system_charts['system_cores'].stats_id;
-                const system_cores_stats_container = document.getElementById(system_cores_stats_id);
-                if (system_cores_stats_container) {
-                    system_cores_stats_container.parentNode.removeChild(system_cores_stats_container);
+                if (system_cores_ctx && system_cores_ctx.parentNode && system_cores_ctx.parentNode.parentNode) {
+                    system_cores_ctx.parentNode.parentNode.removeChild(system_cores_ctx.parentNode);
                 }
 
                 delete system_charts['system_cores'];
@@ -942,14 +1125,8 @@
                 const system_cpu = system_charts['system_cpu'].chart;
                 system_cpu.destroy();
                 const system_cpu_ctx = system_charts['system_cpu'].ctx;
-                if (system_cpu_ctx && system_cpu_ctx.parentNode) {
-                    system_cpu_ctx.parentNode.removeChild(system_cpu_ctx);
-                }
-
-                const system_cpu_stats_id = system_charts['system_cpu'].stats_id;
-                const system_cpu_stats_container = document.getElementById(system_cpu_stats_id);
-                if (system_cpu_stats_container) {
-                    system_cpu_stats_container.parentNode.removeChild(system_cpu_stats_container);
+                if (system_cpu_ctx && system_cpu_ctx.parentNode && system_cpu_ctx.parentNode.parentNode) {
+                    system_cpu_ctx.parentNode.parentNode.removeChild(system_cpu_ctx.parentNode);
                 }
 
                 delete system_charts['system_cpu'];
@@ -971,14 +1148,8 @@
                 const system_memory = system_charts['system_memory'].chart;
                 system_memory.destroy();
                 const system_memory_ctx = system_charts['system_memory'].ctx;
-                if (system_memory_ctx && system_memory_ctx.parentNode) {
-                    system_memory_ctx.parentNode.removeChild(system_memory_ctx);
-                }
-
-                const system_memory_stats_id = system_charts['system_memory'].stats_id;
-                const system_memory_stats_container = document.getElementById(system_memory_stats_id);
-                if (system_memory_stats_container) {
-                    system_memory_stats_container.parentNode.removeChild(system_memory_stats_container);
+                if (system_memory_ctx && system_memory_ctx.parentNode && system_memory_ctx.parentNode.parentNode) {
+                    system_memory_ctx.parentNode.parentNode.removeChild(system_memory_ctx.parentNode);
                 }
 
                 delete system_charts['system_memory'];
@@ -1006,10 +1177,11 @@
 
                 for (const metric of system_memory_metrics) {
                     if (metrics.includes(metric)) {
+                        const label = metric.replace('_', ' ').toUpperCase();
                         system_memory.data.datasets.push({
-                            label: metric.replace('_', ' ').toUpperCase(),
+                            label: label,
                             data: extended_data.map(item => item[metric]),
-                            borderColor: getRandomColor(),
+                            borderColor: getColorForLabel(label),
                             backgroundColor: 'rgba(0, 0, 0, 0)',
                             borderWidth: 1,
                             fill: false
@@ -1041,10 +1213,11 @@
 
                 for (const metric of system_cpu_metrics) {
                     if (metrics.includes(metric)) {
+                        const label = metric.replace('_', ' ').toUpperCase();
                         system_cpu.data.datasets.push({
-                            label: metric.replace('_', ' ').toUpperCase(),
+                            label: label,
                             data: extended_data.map(item => item[metric]),
-                            borderColor: getRandomColor(),
+                            borderColor: getColorForLabel(label),
                             backgroundColor: 'rgba(0, 0, 0, 0)',
                             borderWidth: 1,
                             fill: false
@@ -1081,7 +1254,7 @@
                             system_cores.data.datasets.push({
                                 label: core_label,
                                 data: [],
-                                borderColor: getRandomColor(),
+                                borderColor: getColorForLabel(core_label),
                                 backgroundColor: 'rgba(0, 0, 0, 0)',
                                 borderWidth: 1,
                                 fill: false
@@ -1127,38 +1300,44 @@
                 valid_pids.push(process_id);
 
                 if (!process_charts[process_id]) {
-                    const [process_memory_chart, process_memory_ctx, memory_stats_id] = addChart(`Process_${process_id}_Memory`, 'Memory(MB)');
+                    const memory_title = `[Filter by ${process_input}] Memory(MB)`;
+                    const [process_memory_chart, process_memory_ctx, memory_stats_id] = addChart(`Process_${process_id}_Memory`, 'Memory(MB)', false, memory_title);
+                    const process_memory_label = `Process ${process_id}[${process_name}] Memory`;
                     process_memory_chart.data.datasets.push({
-                        label: `Process ${process_id}[${process_name}] Memory`,
+                        label: process_memory_label,
                         data: data_storage.data.map(item => {
                             const proc = item.processes.find(p => p.pid === process_id);
                             return proc ? proc.memory : null; // 确保数据为 null 而非 0
                         }),
-                        borderColor: getRandomColor(),
+                        borderColor: getColorForLabel(process_memory_label),
                         backgroundColor: 'rgba(0, 0, 0, 0)',
                         borderWidth: 1,
                         fill: false
                     });
                     process_memory_chart.update();
 
-                    const [process_cpu_chart, process_cpu_ctx, cpu_stats_id] = addChart(`Process_${process_id}_CPU`, 'CPU Usage (%)');
+                    const cpu_title = `[Filter by ${process_input}] CPU Usage (%)`;
+                    const [process_cpu_chart, process_cpu_ctx, cpu_stats_id] = addChart(`Process_${process_id}_CPU`, 'CPU Usage (%)', false, cpu_title);
+                    const process_cpu_label = `Process ${process_id}[${process_name}] CPU`;
                     process_cpu_chart.data.datasets.push({
-                        label: `Process ${process_id}[${process_name}] CPU`,
+                        label: process_cpu_label,
                         data: data_storage.data.map(item => {
                             const proc = item.processes.find(p => p.pid === process_id);
                             return proc ? proc.cpu_usage : null; // 确保数据为 null 而非 0
                         }),
-                        borderColor: getRandomColor(),
+                        borderColor: getColorForLabel(process_cpu_label),
                         backgroundColor: 'rgba(0, 0, 0, 0)',
                         borderWidth: 1,
                         fill: false
                     });
                     process_cpu_chart.update();
 
-                    const [process_thread_cpu_chart, process_thread_cpu_ctx, thread_cpu_stats_id] = addChart(`Process_${process_id}_ThreadsCPU`, 'Thread CPU Usage (%)');
+                    const thread_cpu_title = `[Filter by ${process_input}] Thread CPU Usage (%)`;
+                    const [process_thread_cpu_chart, process_thread_cpu_ctx, thread_cpu_stats_id] = addChart(`Process_${process_id}_ThreadsCPU`, 'Thread CPU Usage (%)', false, thread_cpu_title);
                     process.threads.forEach(thread => {
+                        const thread_label = `Thread[${thread.priority}] ${thread.tid}`;
                         process_thread_cpu_chart.data.datasets.push({
-                            label: `Thread[${thread.priority}] ${thread.tid}`,
+                            label: thread_label,
                             data: data_storage.data.map(item => {
                                 const proc = item.processes.find(p => p.pid === process_id);
                                 if (proc) {
@@ -1167,7 +1346,7 @@
                                 }
                                 return null;
                             }),
-                            borderColor: getRandomColor(),
+                            borderColor: getColorForLabel(thread_label),
                             backgroundColor: 'rgba(0, 0, 0, 0)',
                             borderWidth: 1,
                             fill: false
@@ -1202,30 +1381,14 @@
                         const process_memory_ctx = process_chart.memory_ctx;
                         const process_cpu_ctx = process_chart.cpu_ctx;
                         const process_thread_cpu_ctx = process_chart.thread_cpu_ctx;
-                        if (process_memory_ctx && process_memory_ctx.parentNode) {
-                            process_memory_ctx.parentNode.removeChild(process_memory_ctx);
+                        if (process_memory_ctx && process_memory_ctx.parentNode && process_memory_ctx.parentNode.parentNode) {
+                            process_memory_ctx.parentNode.parentNode.removeChild(process_memory_ctx.parentNode);
                         }
-                        if (process_cpu_ctx && process_cpu_ctx.parentNode) {
-                            process_cpu_ctx.parentNode.removeChild(process_cpu_ctx);
+                        if (process_cpu_ctx && process_cpu_ctx.parentNode && process_cpu_ctx.parentNode.parentNode) {
+                            process_cpu_ctx.parentNode.parentNode.removeChild(process_cpu_ctx.parentNode);
                         }
-                        if (process_thread_cpu_ctx && process_thread_cpu_ctx.parentNode) {
-                            process_thread_cpu_ctx.parentNode.removeChild(process_thread_cpu_ctx);
-                        }
-
-                        const memory_stats_id = process_chart.memory_stats_id;
-                        const cpu_stats_id = process_chart.cpu_stats_id;
-                        const thread_cpu_stats_id = process_chart.thread_cpu_stats_id;
-                        const memory_stats_container = document.getElementById(memory_stats_id);
-                        const cpu_stats_container = document.getElementById(cpu_stats_id);
-                        const thread_cpu_stats_container = document.getElementById(thread_cpu_stats_id);
-                        if (memory_stats_container) {
-                            memory_stats_container.parentNode.removeChild(memory_stats_container);
-                        }
-                        if (cpu_stats_container) {
-                            cpu_stats_container.parentNode.removeChild(cpu_stats_container);
-                        }
-                        if (thread_cpu_stats_container) {
-                            thread_cpu_stats_container.parentNode.removeChild(thread_cpu_stats_container);
+                        if (process_thread_cpu_ctx && process_thread_cpu_ctx.parentNode && process_thread_cpu_ctx.parentNode.parentNode) {
+                            process_thread_cpu_ctx.parentNode.parentNode.removeChild(process_thread_cpu_ctx.parentNode);
                         }
                     }
                 }
@@ -1238,6 +1401,24 @@
             const g = Math.floor(Math.random() * 255);
             const b = Math.floor(Math.random() * 255);
             return `rgba(${r}, ${g}, ${b}, 1)`;
+        }
+
+        // 根据 label 生成确定性颜色，保证同一 metric 刷新后颜色一致
+        // 使用预定义调色板，避免相似 label 生成过于接近的颜色
+        function getColorForLabel(label) {
+            const palette = [
+                '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+                '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
+                '#469990', '#dcbeff', '#9A6324', '#fffac8', '#800000',
+                '#aaffc3', '#808000', '#ffd8b1', '#000075', '#a9a9a9'
+            ];
+            let hash = 0;
+            for (let i = 0; i < label.length; i++) {
+                hash = ((hash << 5) - hash) + label.charCodeAt(i);
+                hash |= 0;
+            }
+            const index = Math.abs(hash) % palette.length;
+            return palette[index];
         }
     </script>
 </head>
@@ -1272,6 +1453,11 @@
         <button id="exportPage">Export as PNG</button> <!-- 添加导出按钮 -->
     </div>
     <div id="content"></div>
+
+    <div id="jumpMenu" class="jump-menu">
+        <button id="jumpMenuToggle" class="jump-menu-toggle">Charts</button>
+        <div id="jumpMenuList" class="jump-menu-list"></div>
+    </div>
 
     <div id="waitingOverlay" class="waiting-overlay">
         <div class="waiting-dots">
