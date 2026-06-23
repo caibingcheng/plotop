@@ -57,6 +57,7 @@ class Network::ImplNetwork {
       Log::error("Failed to connect to ", address_, ":", port_);
       return;
     }
+    Log::debug("Connected to ", address_, ":", port_);
   }
 
  private:

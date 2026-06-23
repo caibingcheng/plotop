@@ -131,7 +131,6 @@ class Packet::ImplPacket {
   template <typename T> T get_key_value_from_file_(const std::string &file, const std::string &key) {
     std::ifstream ifs(file);
     if (!ifs.is_open()) {
-      Log::error("Failed to open ", file);
       return T();
     }
 
@@ -139,7 +138,14 @@ class Packet::ImplPacket {
     while (std::getline(ifs, line)) {
       if (line.find(key) != std::string::npos) {
         const auto pos = line.find_first_of("0123456789");
-        return std::stoll(line.substr(pos));
+        if (pos == std::string::npos) {
+          return T();
+        }
+        try {
+          return std::stoll(line.substr(pos));
+        } catch (const std::exception &) {
+          return T();
+        }
       }
     }
 
@@ -172,7 +178,10 @@ class Packet::ImplPacket {
       if (entry->d_type == DT_DIR) {
         const std::string name = entry->d_name;
         if (name.find_first_not_of("0123456789") == std::string::npos) {
-          pids.push_back(std::stoi(name));
+          try {
+            pids.push_back(std::stoi(name));
+          } catch (const std::exception &) {
+          }
         }
       }
     }
@@ -193,7 +202,10 @@ class Packet::ImplPacket {
       if (entry->d_type == DT_DIR) {
         const std::string name = entry->d_name;
         if (name.find_first_not_of("0123456789") == std::string::npos) {
-          tids.push_back(std::stoi(name));
+          try {
+            tids.push_back(std::stoi(name));
+          } catch (const std::exception &) {
+          }
         }
       }
     }
@@ -275,43 +287,46 @@ class Packet::ImplPacket {
 
     return threads;
   }
-
   std::list<Process> get_processes_(const std::list<std::string> &patterns) {
     std::list<Process> processes;
     for (const auto pid : get_pids_()) {
-      const std::string stat_str = get_string_from_file_(get_proc_pid_stat(pid));
-      if (stat_str.empty()) {
-        continue;
-      }
-      Stat stat;
-      if (!parse_stat_(stat_str, stat)) {
-        continue;
-      }
+      try {
+        const std::string stat_str = get_string_from_file_(get_proc_pid_stat(pid));
+        if (stat_str.empty()) {
+          continue;
+        }
 
-      std::string name(stat.comm);
-      auto pattern_match = [&](const std::string &pattern) { return name.find(pattern) != std::string::npos; };
-      const bool match = patterns.empty() || std::any_of(patterns.begin(), patterns.end(), pattern_match);
-      if (!match) {
-        continue;
-      }
+        Stat stat;
+        if (!parse_stat_(stat_str, stat)) {
+          continue;
+        }
 
-      const std::string statm_str = get_string_from_file_(get_proc_pid_mem(pid));
-      if (statm_str.empty()) {
-        continue;
-      }
-      StatM statm;
-      if (!parse_statm_(statm_str, statm)) {
-        continue;
-      }
+        std::string name(stat.comm);
+        auto pattern_match = [&](const std::string &pattern) { return name.find(pattern) != std::string::npos; };
+        const bool match = patterns.empty() || std::any_of(patterns.begin(), patterns.end(), pattern_match);
+        if (!match) {
+          continue;
+        }
 
-      Process process;
-      process.pid = pid;
-      process.memory = statm.resident * 4;  // resident is in pages
-      process.name = name;
-      process.cpu_user = stat.utime;
-      process.cpu_system = stat.stime;
-      process.threads = get_threads_(pid);
-      processes.push_back(process);
+        const std::string statm_str = get_string_from_file_(get_proc_pid_mem(pid));
+        if (statm_str.empty()) {
+          continue;
+        }
+        StatM statm;
+        if (!parse_statm_(statm_str, statm)) {
+          continue;
+        }
+
+        Process process;
+        process.pid = pid;
+        process.memory = statm.resident * 4;  // resident is in pages
+        process.name = name;
+        process.cpu_user = stat.utime;
+        process.cpu_system = stat.stime;
+        process.threads = get_threads_(pid);
+        processes.push_back(process);
+      } catch (const std::exception &) {
+      }
     }
 
     return processes;
@@ -321,7 +336,6 @@ class Packet::ImplPacket {
     std::list<CPUsage> cpus;
     std::ifstream ifs(get_proc_stat());
     if (!ifs.is_open()) {
-      Log::error("Failed to open ", get_proc_stat());
       return cpus;
     }
 

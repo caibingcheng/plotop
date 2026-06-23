@@ -1,13 +1,17 @@
 from flask import Flask, request, jsonify, render_template
 from flask_socketio import SocketIO, emit
 import json
+import logging
 import socket
 import threading
 import time
 import os
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO)
+
 app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
 socketio = SocketIO(app, cors_allowed_origins="*",
                     ping_interval=1, ping_timeout=5, async_mode="threading")
 
@@ -92,6 +96,7 @@ def start_raw_socket_server():
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind(('0.0.0.0', 8001))
     server_socket.listen(5)
+    app.logger.info("Raw socket server listening on 0.0.0.0:8001")
     if server_socket is None:
         app.logger.error("Failed to create socket")
         return
@@ -142,6 +147,7 @@ def handle_subscribe(message):
 
 def main():
     run_socket_server()
+    app.logger.info("Web server starting on http://127.0.0.1:5000")
     # 禁用开发服务器的警告日志
     socketio.run(app, host='127.0.0.1', port=5000,
                  use_reloader=False, log_output=False)

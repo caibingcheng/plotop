@@ -55,7 +55,7 @@ inline Jsonify &to_jsonify(Jsonify &jsonify, const Process &process) {
 }
 
 inline Jsonify &to_jsonify(Jsonify &jsonify, const Stats &stats) {
-  const auto ts = std::chrono::system_clock::now();
+  const auto ts = std::chrono::steady_clock::now();
   const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(ts.time_since_epoch()).count();
   jsonify["timestamp"] = ts_ms;
   jsonify["processor_frequency"] = stats.processor_frequency;
@@ -82,7 +82,6 @@ class Packet {
  public:
   std::string to_json(const Stats &stats) const {
     const auto jsonify = Jsonify(stats).to_string() + "\r\n";  // \n is a delimiter
-    // Log::debug("jsonify: ", jsonify);
     return jsonify;
   }
 
@@ -121,7 +120,7 @@ class Packet {
   }
 
   std::string to_json_(const Stats &value) const {
-    const auto ts = std::chrono::system_clock::now();
+    const auto ts = std::chrono::steady_clock::now();
     const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(ts.time_since_epoch()).count();
     std::string json = "{";
     json += "\"timestamp\":" + std::to_string(ts_ms) + ",";
