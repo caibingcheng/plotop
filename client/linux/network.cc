@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -24,9 +25,39 @@ class Network::ImplNetwork {
       throw std::runtime_error("Socket not connected");
     }
 
+    std::lock_guard<std::mutex> lock(send_mutex_);
     if (::send(sock_, data.c_str(), data.size(), MSG_NOSIGNAL) < 0) {
       Log::error("Failed to send data ", errno);
       throw std::runtime_error("Failed to send data " + std::to_string(errno));
+    }
+  }
+
+  std::string recv() {
+    if (sock_ < 0) {
+      Log::error("Socket not connected");
+      throw std::runtime_error("Socket not connected");
+    }
+
+    while (true) {
+      const auto pos = read_buffer_.find('\n');
+      if (pos != std::string::npos) {
+        std::string message = read_buffer_.substr(0, pos + 1);
+        read_buffer_.erase(0, pos + 1);
+        return message;
+      }
+
+      char buf[4096];
+      const auto bytes = ::recv(sock_, buf, sizeof(buf), 0);
+      if (bytes == 0) {
+        Log::error("Connection closed by peer");
+        throw std::runtime_error("Connection closed by peer");
+      }
+      if (bytes < 0) {
+        Log::error("Failed to receive data ", errno);
+        throw std::runtime_error("Failed to receive data " + std::to_string(errno));
+      }
+
+      read_buffer_.append(buf, static_cast<size_t>(bytes));
     }
   }
 
@@ -64,10 +95,13 @@ class Network::ImplNetwork {
   std::string address_;
   int32_t port_;
   int32_t sock_;
+  std::string read_buffer_;
+  std::mutex send_mutex_;
 };
 
 Network::Network(const std::string &address, int32_t port) : impl_(new ImplNetwork(address, port)) {}
 Network::~Network() {}
 
 void Network::send(const std::string &data) { impl_->send(data); }
+std::string Network::recv() { return impl_->recv(); }
 bool Network::ready() const { return impl_->ready(); }

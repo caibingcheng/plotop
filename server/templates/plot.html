@@ -31,6 +31,75 @@
             padding: 5px;
         }
 
+        #filterButton {
+            margin-left: 10px;
+        }
+
+        #filter-panel {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #filter-panel.visible {
+            display: flex;
+        }
+
+        #filter-panel .modal-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        #filter-panel h3 {
+            margin-top: 0;
+        }
+
+        #processList {
+            list-style: none;
+            padding: 0;
+            max-height: 50vh;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #fff;
+            margin: 10px 0;
+        }
+
+        #processList li {
+            padding: 4px 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        #processList li:last-child {
+            border-bottom: none;
+        }
+
+        #processList input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        #filterStatus {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            background-color: #e8f5e9;
+            min-height: 1.5em;
+        }
+
         #content {
             margin-top: 2rem;
         }
@@ -671,6 +740,13 @@
 
         var system_charts = {};
         var process_charts = {};
+        var selectedPids = new Set();
+        var selectedSystemMetrics = ["used_memory", "cpu_usage", "cpu_cores"];
+
+        function getMetricsValue() {
+            const pidMetrics = Array.from(selectedPids).map(pid => `pid=${pid}`);
+            return [...selectedSystemMetrics, ...pidMetrics].join(',');
+        }
 
         function addChart(name, y_axis_label, is_system_chart = false, chart_title = null) {
             const wrapper = document.createElement('div');
@@ -798,8 +874,7 @@
         }
 
         function updateChart() {
-            const input = document.getElementById("metricsInput").value;
-            const metrics = input.split(/[\n,]+/).map(metric => metric.trim()).filter(metric => metric);
+            const metrics = getMetricsValue().split(/[\n,]+/).map(metric => metric.trim()).filter(metric => metric);
 
             initSystemCharts(metrics);
             initProcessCharts(metrics);
@@ -904,6 +979,15 @@
                 subscribe();
             });
 
+            function needsProcessChartUpdate() {
+                const metrics = getMetricsValue().split(',').map(m => m.trim()).filter(m => m);
+                const expectedPids = metrics.filter(m => m.startsWith('pid=')).map(m => parseInt(m.split('=')[1], 10));
+                const lastData = data_storage.last();
+                if (!lastData) return false;
+                const currentPids = lastData.processes.map(p => p.pid);
+                return expectedPids.some(pid => currentPids.includes(pid) && !process_charts[pid]);
+            }
+
             socket.on('new_data/' + ip, function (data) {
                 let stat = JSON.parse(data.data);
                 data_storage.add(stat);
@@ -917,7 +1001,11 @@
                 }
 
                 if (!is_paused && data_storage.length() > 0) {
-                    refreshChartsForCurrentDuration();
+                    if (needsProcessChartUpdate()) {
+                        updateChart();
+                    } else {
+                        refreshChartsForCurrentDuration();
+                    }
                 }
 
                 // keep alive
@@ -959,7 +1047,7 @@
             const metricsModalCancel = document.getElementById("metricsModalCancel");
 
             function openMetricsModal() {
-                metricsModalInput.value = metricsInput.value.replace(/,/g, ',\n');
+                metricsModalInput.value = getMetricsValue().replace(/,/g, ',\n');
                 metricsModal.style.display = 'flex';
                 metricsModalInput.focus();
             }
@@ -971,12 +1059,29 @@
             function applyMetricsModal() {
                 const value = metricsModalInput.value;
                 const metrics = value.split(/[\n,]+/).map(metric => metric.trim()).filter(metric => metric);
-                metricsInput.value = metrics.join(',');
+                // Only allow modifying system metrics; pid= metrics come from the process filter dialog.
+                const allowedSystemMetrics = ["free_memory", "used_memory", "total_memory", "cpu_usage", "cpu_idle", "cpu_cores"];
+                const systemMetrics = metrics.filter(m => allowedSystemMetrics.includes(m));
+                selectedSystemMetrics.length = 0;
+                selectedSystemMetrics.push(...systemMetrics);
+
+                const pidMetrics = metrics.filter(m => m.startsWith('pid='));
+                selectedPids.clear();
+                pidMetrics.forEach(m => {
+                    const pid = parseInt(m.split('=')[1], 10);
+                    if (!isNaN(pid)) {
+                        selectedPids.add(pid);
+                    }
+                });
+
                 closeMetricsModal();
                 updateChart();
+                socket.emit('apply_filter', { ip: ip, pids: Array.from(selectedPids) });
             }
 
-            metricsInput.addEventListener("click", openMetricsModal);
+            if (metricsInput) {
+                metricsInput.addEventListener("click", openMetricsModal);
+            }
             metricsModalOk.addEventListener("click", applyMetricsModal);
             metricsModalCancel.addEventListener("click", closeMetricsModal);
 
@@ -1073,6 +1178,120 @@
                     }
                 }
             });
+
+            let allProcesses = [];
+            let currentSearchQuery = '';
+
+            socket.on('process_list/' + ip, function (msg) {
+                allProcesses = msg.processes || [];
+                applySearch();
+            });
+
+            function applySearch() {
+                const query = currentSearchQuery;
+                if (!query) {
+                    renderProcessList(allProcesses);
+                    return;
+                }
+                const filtered = allProcesses.filter(function (process) {
+                    return String(process.pid).includes(query) || (process.name && process.name.toLowerCase().includes(query));
+                });
+                renderProcessList(filtered);
+            }
+
+            function renderProcessList(processes) {
+                const processList = document.getElementById('processList');
+                if (!processList) return;
+
+                processList.innerHTML = '';
+                processes.forEach(function (process) {
+                    const li = document.createElement('li');
+                    li.style.cursor = 'pointer';
+                    const label = document.createElement('label');
+                    label.style.pointerEvents = 'none';
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.value = process.pid;
+                    checkbox.checked = selectedPids.has(process.pid);
+                    checkbox.style.pointerEvents = 'none';
+
+                    function toggle() {
+                        checkbox.checked = !checkbox.checked;
+                        if (checkbox.checked) {
+                            selectedPids.add(process.pid);
+                        } else {
+                            selectedPids.delete(process.pid);
+                        }
+                    }
+
+                    li.addEventListener('click', toggle);
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(process.pid + ': ' + process.name));
+                    li.appendChild(label);
+                    processList.appendChild(li);
+                });
+            }
+
+            const processSearchInput = document.getElementById('processSearchInput');
+            if (processSearchInput) {
+                processSearchInput.addEventListener('input', function () {
+                    currentSearchQuery = this.value.trim().toLowerCase();
+                    applySearch();
+                });
+            }
+
+            socket.on('filter_status/' + ip, function (msg) {
+                const filterStatus = document.getElementById('filterStatus');
+                if (!filterStatus) return;
+
+                if (msg.matched_count > 0) {
+                    filterStatus.textContent = 'Filter applied: ' + msg.matched_count + ' of ' + msg.requested_count + ' selected processes currently running.';
+                } else {
+                    filterStatus.textContent = 'Filter applied, but none of the selected processes are currently running.';
+                }
+            });
+
+            const filterPanel = document.getElementById('filter-panel');
+            const filterButton = document.getElementById('filterButton');
+            const cancelFilterBtn = document.getElementById('cancelFilterBtn');
+            const applyFilterBtn = document.getElementById('applyFilterBtn');
+
+            function openFilterPanel() {
+                if (filterPanel) {
+                    filterPanel.classList.add('visible');
+                }
+            }
+
+            function closeFilterPanel() {
+                if (filterPanel) {
+                    filterPanel.classList.remove('visible');
+                }
+            }
+
+            if (filterButton) {
+                filterButton.addEventListener('click', openFilterPanel);
+            }
+
+            if (cancelFilterBtn) {
+                cancelFilterBtn.addEventListener('click', closeFilterPanel);
+            }
+
+            if (filterPanel) {
+                filterPanel.addEventListener('click', function (event) {
+                    if (event.target === filterPanel) {
+                        closeFilterPanel();
+                    }
+                });
+            }
+
+            if (applyFilterBtn) {
+                applyFilterBtn.addEventListener('click', function () {
+                    const selected = Array.from(selectedPids);
+                    socket.emit('apply_filter', { ip: ip, pids: selected });
+                    updateChart();
+                    closeFilterPanel();
+                });
+            }
 
             document.getElementById("pauseChart").addEventListener("click", function () {
                 is_paused = !is_paused;
@@ -1300,9 +1519,10 @@
                 valid_pids.push(process_id);
 
                 if (!process_charts[process_id]) {
-                    const memory_title = `[Filter by ${process_input}] Memory(MB)`;
+                    const process_display = `${process_name} (pid=${process_id})`;
+                    const memory_title = `[${process_display}] Memory(MB)`;
                     const [process_memory_chart, process_memory_ctx, memory_stats_id] = addChart(`Process_${process_id}_Memory`, 'Memory(MB)', false, memory_title);
-                    const process_memory_label = `Process ${process_id}[${process_name}] Memory`;
+                    const process_memory_label = `${process_display} Memory`;
                     process_memory_chart.data.datasets.push({
                         label: process_memory_label,
                         data: data_storage.data.map(item => {
@@ -1316,9 +1536,9 @@
                     });
                     process_memory_chart.update();
 
-                    const cpu_title = `[Filter by ${process_input}] CPU Usage (%)`;
+                    const cpu_title = `[${process_display}] CPU Usage (%)`;
                     const [process_cpu_chart, process_cpu_ctx, cpu_stats_id] = addChart(`Process_${process_id}_CPU`, 'CPU Usage (%)', false, cpu_title);
-                    const process_cpu_label = `Process ${process_id}[${process_name}] CPU`;
+                    const process_cpu_label = `${process_display} CPU`;
                     process_cpu_chart.data.datasets.push({
                         label: process_cpu_label,
                         data: data_storage.data.map(item => {
@@ -1332,7 +1552,7 @@
                     });
                     process_cpu_chart.update();
 
-                    const thread_cpu_title = `[Filter by ${process_input}] Thread CPU Usage (%)`;
+                    const thread_cpu_title = `[${process_display}] Thread CPU Usage (%)`;
                     const [process_thread_cpu_chart, process_thread_cpu_ctx, thread_cpu_stats_id] = addChart(`Process_${process_id}_ThreadsCPU`, 'Thread CPU Usage (%)', false, thread_cpu_title);
                     process.threads.forEach(thread => {
                         const thread_label = `Thread[${thread.priority}] ${thread.tid}`;
@@ -1446,12 +1666,25 @@
                 <option value="hour">hour</option>
             </select>
         </span>
-        <label for="metricsInput">Enter metrics (e.g., free_memory, used_memory):</label>
-        <input type="text" id="metricsInput" placeholder="Enter metrics separated by commas"
-            value="used_memory,cpu_usage,cpu_cores" readonly style="cursor: pointer;">
+        <button id="filterButton">Select Processes</button>
         <button id="pauseChart">Pause Chart</button>
         <button id="exportPage">Export as PNG</button> <!-- 添加导出按钮 -->
     </div>
+
+    <div id="filter-panel">
+        <div class="modal-container">
+            <h3>Select Processes</h3>
+            <input type="text" id="processSearchInput" placeholder="Search pid or name..."
+                style="width: 100%; padding: 6px; margin-bottom: 8px; box-sizing: border-box;">
+            <ul id="processList"></ul>
+            <div class="modal-buttons">
+                <button id="cancelFilterBtn">Cancel</button>
+                <button id="applyFilterBtn" style="background-color: #4CAF50; color: white;">Apply Filter</button>
+            </div>
+            <div id="filterStatus"></div>
+        </div>
+    </div>
+
     <div id="content"></div>
 
     <div id="jumpMenu" class="jump-menu">

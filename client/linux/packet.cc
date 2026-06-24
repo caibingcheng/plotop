@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <fstream>
 #include <list>
-#include <regex>
 #include <string>
 #include <string_view>
 
@@ -113,11 +112,10 @@ class Packet::ImplPacket {
   ~ImplPacket() {}
 
  public:
-  void collate(Stats &stats, const std::list<std::string> &patterns,
-               const std::list<int32_t> &pids) {
+  void collate(Stats &stats, const std::list<int32_t> &pids) {
     stats.total_memory = get_total_memory_();
     stats.free_memory = get_free_memory_();
-    stats.processes = get_processes_(patterns, pids);
+    stats.processes = get_processes_(pids);
     auto summary_cpu = get_cpu_usage_();
     for (const auto &cpu : summary_cpu) {
       stats.cpu_user.push_back(cpu.user);
@@ -154,7 +152,7 @@ class Packet::ImplPacket {
     return T();
   }
 
-  std::string get_string_from_file_(const std::string &file) {
+  std::string get_string_from_file_(const std::string &file) const {
     std::ifstream ifs(file);
     if (!ifs.is_open()) {
       return "";
@@ -168,7 +166,7 @@ class Packet::ImplPacket {
   int64_t get_total_memory_() { return get_key_value_from_file_<int64_t>(get_proc_meminfo(), "MemTotal:"); }
   int64_t get_free_memory_() { return get_key_value_from_file_<int64_t>(get_proc_meminfo(), "MemFree:"); }
 
-  std::list<int32_t> get_pids_() {
+  std::list<int32_t> get_pids_() const {
     std::list<int32_t> pids;
     DIR *dir = opendir(get_proc().c_str());
     if (dir == nullptr) {
@@ -192,7 +190,7 @@ class Packet::ImplPacket {
     return pids;
   }
 
-  std::list<int32_t> get_tids_(int32_t pid) {
+  std::list<int32_t> get_tids_(int32_t pid) const {
     std::list<int32_t> tids;
     DIR *dir = opendir(get_proc_tid(pid).c_str());
     if (dir == nullptr) {
@@ -216,7 +214,7 @@ class Packet::ImplPacket {
     return tids;
   }
 
-  bool parse_stat_(const std::string &stat_str, Stat &stat) {
+  bool parse_stat_(const std::string &stat_str, Stat &stat) const {
     std::string_view stat_view(stat_str);
     std::string comm_str(stat_str.substr(0, stat_str.find_last_of(")") + 1));
     const auto pid_comm_count = sscanf(comm_str.c_str(), "%d %s", &stat.pid, stat.comm);
@@ -289,8 +287,7 @@ class Packet::ImplPacket {
 
     return threads;
   }
-  std::list<Process> get_processes_(const std::list<std::string> &patterns,
-                                    const std::list<int32_t> &pids) {
+  std::list<Process> get_processes_(const std::list<int32_t> &pids) {
     std::list<Process> processes;
     for (const auto pid : get_pids_()) {
       try {
@@ -305,11 +302,8 @@ class Packet::ImplPacket {
         }
 
         std::string name(stat.comm);
-        auto name_match = [&](const std::string &pattern) { return name.find(pattern) != std::string::npos; };
         auto pid_match = [&](int32_t filter_pid) { return pid == filter_pid; };
-        const bool match = (patterns.empty() && pids.empty()) ||
-                           std::any_of(patterns.begin(), patterns.end(), name_match) ||
-                           std::any_of(pids.begin(), pids.end(), pid_match);
+        const bool match = !pids.empty() && std::any_of(pids.begin(), pids.end(), pid_match);
         if (!match) {
           continue;
         }
@@ -358,12 +352,70 @@ class Packet::ImplPacket {
 
     return cpus;
   }
+
+ public:
+  std::list<ProcessInfo> get_process_list_() const {
+    std::list<ProcessInfo> processes;
+    for (const auto pid : get_pids_()) {
+      try {
+        const std::string stat_str = get_string_from_file_(get_proc_pid_stat(pid));
+        if (stat_str.empty()) {
+          continue;
+        }
+
+        Stat stat;
+        if (!parse_stat_(stat_str, stat)) {
+          continue;
+        }
+
+        std::string name(stat.comm);
+        if (name.size() >= 2 && name.front() == '(' && name.back() == ')') {
+          name = name.substr(1, name.size() - 2);
+        }
+
+        processes.push_back({pid, name});
+      } catch (const std::exception &) {
+      }
+    }
+
+    processes.sort([](const ProcessInfo &a, const ProcessInfo &b) { return a.pid < b.pid; });
+    return processes;
+  }
+
+  bool process_list_changed_() const {
+    auto current = get_process_list_();
+    if (current.size() != last_process_list_.size()) {
+      last_process_list_ = std::move(current);
+      return true;
+    }
+
+    auto it_current = current.begin();
+    auto it_last = last_process_list_.begin();
+    for (; it_current != current.end(); ++it_current, ++it_last) {
+      if (it_current->pid != it_last->pid || it_current->name != it_last->name) {
+        last_process_list_ = std::move(current);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+ private:
+  mutable std::list<ProcessInfo> last_process_list_;
 };
 
 Packet::Packet() : impl_(new ImplPacket()) {}
 Packet::~Packet() {}
 
-void Packet::collate(Stats &stats, const std::list<std::string> &patterns,
-                     const std::list<int32_t> &pids) {
-  impl_->collate(stats, patterns, pids);
+void Packet::collate(Stats &stats, const std::list<int32_t> &pids) {
+  impl_->collate(stats, pids);
+}
+
+std::list<ProcessInfo> Packet::get_process_list() const {
+  return impl_->get_process_list_();
+}
+
+bool Packet::process_list_changed() const {
+  return impl_->process_list_changed_();
 }
