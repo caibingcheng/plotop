@@ -133,7 +133,7 @@ def run_socket_server():
 def index():
     args = request.args
     if 'ip' not in args or args['ip'] not in client_data:
-        return render_template('index.html', client_ips=client_data.keys())
+        return render_template('index.html', client_ips=client_data.keys(), client_alive=client_alive)
     return render_template('plot.html', ip=args['ip'])
 
 

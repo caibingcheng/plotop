@@ -8,27 +8,116 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
+            margin: 0;
+            background-color: #f8f9fa;
         }
 
-        button {
-            background-color: #4CAF50;
-            /* 绿色背景 */
-            border: none;
-            color: white;
-            padding: 15px 32px;
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
             text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 4px 2px;
-            cursor: pointer;
-            border-radius: 8px;
+            margin-bottom: 30px;
         }
 
-        button:hover {
-            background-color: #45a049;
-            /* 鼠标悬停时的颜色 */
+        header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            color: #888;
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .ip-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .ip-item {
+            display: flex;
+            align-items: center;
+            background-color: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .ip-item:hover {
+            border-color: #4CAF50;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .status-dot.online {
+            background-color: #4CAF50;
+        }
+
+        .status-dot.offline {
+            background-color: #bbb;
+        }
+
+        .ip-text {
+            flex: 1;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .ip-arrow {
+            color: #ccc;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .empty-hint {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-hint h3 {
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 20px;
+        }
+
+        .empty-hint p {
+            margin: 8px 0;
+            color: #888;
+        }
+
+        .empty-hint code {
+            display: inline-block;
+            background-color: #f5f5f5;
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-family: monospace;
+            color: #2e7d32;
+            margin: 12px 0;
+            font-size: 14px;
+        }
+
+        .empty-hint .hint-detail {
+            font-size: 13px;
+            color: #aaa;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
@@ -36,22 +125,55 @@
         document.addEventListener("DOMContentLoaded", function () {
             var socket = io.connect('http://' + document.domain + ':' + location.port);
             var displayedIps = new Set();
-            // init from button list
-            var buttons = document.getElementsByTagName("button");
-            for (var i = 0; i < buttons.length; i++) {
-                displayedIps.add(buttons[i].innerHTML);
+            // init from existing ip items
+            var items = document.getElementsByClassName("ip-item");
+            for (var i = 0; i < items.length; i++) {
+                var ipText = items[i].querySelector(".ip-text");
+                if (ipText) {
+                    displayedIps.add(ipText.innerHTML);
+                }
             }
+
+            function hideEmptyHint() {
+                var emptyHint = document.getElementById("emptyHint");
+                if (emptyHint) {
+                    emptyHint.style.display = "none";
+                }
+            }
+
+            function createIpItem(ip) {
+                var item = document.createElement("div");
+                item.className = "ip-item";
+                item.onclick = function () {
+                    window.location.href = '/?ip=' + ip;
+                };
+
+                var dot = document.createElement("span");
+                dot.className = "status-dot online";
+
+                var text = document.createElement("span");
+                text.className = "ip-text";
+                text.innerHTML = ip;
+
+                var arrow = document.createElement("span");
+                arrow.className = "ip-arrow";
+                arrow.innerHTML = "›";
+
+                item.appendChild(dot);
+                item.appendChild(text);
+                item.appendChild(arrow);
+                return item;
+            }
+
             socket.on('new_ip', function (data) {
+                hideEmptyHint();
                 var ip = data.ip;
                 if (!displayedIps.has(ip)) {
                     displayedIps.add(ip);
-                    var button = document.createElement("button");
-                    button.innerHTML = ip;
-                    button.onclick = function () {
-                        window.location.href = '/?ip=' + ip;
-                    };
-                    document.body.appendChild(button);
-                    document.body.appendChild(document.createElement("br"));
+                    var ipList = document.getElementById("ipList");
+                    if (ipList) {
+                        ipList.appendChild(createIpItem(ip));
+                    }
                 }
             });
         });
@@ -59,9 +181,27 @@
 </head>
 
 <body>
-    {% for ip in client_ips %}
-    <button onclick="window.location.href='/?ip={{ ip }}'">{{ ip }}</button><br>
-    {% endfor %}
+    <div class="container">
+        <header>
+            <h1>Plotop Clients</h1>
+            <p>已连接的客户端列表，点击 IP 查看实时性能数据</p>
+        </header>
+        <div id="emptyHint" class="empty-hint" {% if client_ips %}style="display: none;"{% endif %}>
+            <h3>暂无客户端连接 / No clients connected</h3>
+            <p>请先启动 plotop client，将性能数据发送到本服务端：</p>
+            <code>./plotop -i &lt;server_ip&gt; -p 8001 -d 1</code>
+            <p class="hint-detail">更多用法请参考 README.md</p>
+        </div>
+        <div id="ipList" class="ip-list">
+            {% for ip in client_ips %}
+            <div class="ip-item" onclick="window.location.href='/?ip={{ ip }}'">
+                <span class="status-dot {{ 'online' if client_alive.get(ip, False) else 'offline' }}"></span>
+                <span class="ip-text">{{ ip }}</span>
+                <span class="ip-arrow">›</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
 </body>
 
 </html>
