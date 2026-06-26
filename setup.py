@@ -5,7 +5,7 @@ with open("requirements.txt") as f:
 
 setup(
     name="plotop",
-    version="0.1.0",
+    use_scm_version=True,
     packages=find_packages(include=["server", "server.*", "server.templates", "server.templates.*"]),
     package_data={
         "server": [
