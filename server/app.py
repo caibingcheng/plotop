@@ -289,6 +289,17 @@ def handle_apply_filter(message):
         app.logger.info(f"Sent filter to {ip}: {pids}")
 
 
+@socketio.on('clear_data')
+def handle_clear_data(message):
+    ip = message.get('ip')
+    if ip is None or ip not in client_data:
+        return
+    client_data[ip] = []
+    client_subscribed[ip] = (10, datetime.now())
+    socketio.emit(f'clear/{ip}', {}, namespace='/')
+    app.logger.info(f"Cleared data for {ip}")
+
+
 def main():
     run_socket_server()
     app.logger.info("Web server starting on http://127.0.0.1:5000")
