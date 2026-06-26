@@ -15,7 +15,8 @@ from server import __version__
 
 logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__, static_url_path='/static', static_folder='../statics')
+static_folder = os.path.join(os.path.dirname(__file__), "statics")
+app = Flask(__name__, static_url_path='/static', static_folder=static_folder)
 app.logger.setLevel(logging.INFO)
 socketio = SocketIO(app, cors_allowed_origins="*",
                     ping_interval=1, ping_timeout=5, async_mode="threading")
