@@ -10,6 +10,10 @@
 #include <unordered_map>
 #include <vector>
 
+#ifndef PLOTOP_VERSION
+#define PLOTOP_VERSION "unknown"
+#endif
+
 class Cmdline {
   struct ArgumentInfo {
     char short_name;
@@ -23,6 +27,8 @@ class Cmdline {
   Cmdline() {
     arguments_["h"] = arguments_["help"] = [&](const std::string &) { help_requested_ = true; };
     args_info_.push_back({'h', "help", "Show this help message and exit", "", false});
+    arguments_["v"] = arguments_["version"] = [&](const std::string &) { version_requested_ = true; };
+    args_info_.push_back({'v', "version", "Show version information and exit", "", false});
   }
   ~Cmdline() {}
 
@@ -93,6 +99,11 @@ class Cmdline {
         continue;
       }
 
+      if (name == "v" || name == "version") {
+        version_requested_ = true;
+        continue;
+      }
+
       for (i++; i < argc; i++) {
         if (argv[i][0] == '-') {
           i--;
@@ -111,10 +122,15 @@ class Cmdline {
       help();
       return false;
     }
+    if (version_requested_) {
+      version();
+      return false;
+    }
     return true;
   }
 
   void help() const {
+    std::cout << program_name_ << " " << PLOTOP_VERSION << "\n\n";
     std::cout << "Usage: " << program_name_ << " [options]\n\n";
     std::cout << "Options:\n";
 
@@ -143,11 +159,16 @@ class Cmdline {
     }
   }
 
+  void version() const {
+    std::cout << program_name_ << " " << PLOTOP_VERSION << "\n";
+  }
+
  private:
   std::unordered_map<std::string, std::function<void(const std::string &)>> arguments_;
   std::vector<ArgumentInfo> args_info_;
   std::string program_name_ = "plotop";
   bool help_requested_ = false;
+  bool version_requested_ = false;
 };
 
 #endif  // PLOTOP_CMDLINE_H

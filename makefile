@@ -1,11 +1,14 @@
 PLATFORM ?= linux
 CROSSCOMPILER ?=
 
+# Version from git tag (same format as setuptools_scm)
+VERSION := $(shell python3 scripts/get_version.py 2>/dev/null || echo "unknown")
+
 # Compiler
 CXX := $(CROSSCOMPILER)g++
 
 # Compiler flags
-CXXFLAGS := -std=c++17 -Wall
+CXXFLAGS := -std=c++17 -Wall -DPLOTOP_VERSION=\"$(VERSION)\"
 
 # Linker flags
 LDFLAGS := -lstdc++fs -pthread -static-libstdc++ -static-libgcc

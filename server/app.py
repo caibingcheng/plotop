@@ -1,13 +1,17 @@
-from flask import Flask, request, jsonify, render_template
-from flask_socketio import SocketIO, emit
+import argparse
+from datetime import datetime, timedelta
 import json
 import logging
+import os
+import queue
 import socket
 import threading
 import time
-import queue
-import os
-from datetime import datetime, timedelta
+
+from flask import Flask, request, jsonify, render_template
+from flask_socketio import SocketIO, emit
+
+from server import __version__
 
 logging.basicConfig(level=logging.INFO)
 
@@ -301,6 +305,17 @@ def handle_clear_data(message):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        prog="plotop",
+        description="Real-time performance plotting server"
+    )
+    parser.add_argument(
+        "-v", "--version",
+        action="version",
+        version=f"%(prog)s {__version__}"
+    )
+    parser.parse_args()
+
     run_socket_server()
     app.logger.info("Web server starting on http://127.0.0.1:5000")
     # 禁用开发服务器的警告日志
