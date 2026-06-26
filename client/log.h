@@ -19,6 +19,11 @@ class Log {
       log_error_("[ERROR] ", std::forward<Args>(args)...);
     }
   }
+  template <typename... Args> static void warning(Args &&...args) {
+    if (level_ >= INFO) {
+      log_info_("[WARNING] ", std::forward<Args>(args)...);
+    }
+  }
   template <typename... Args> static void info(Args &&...args) {
     if (level_ >= INFO) {
       log_info_("[INFO] ", std::forward<Args>(args)...);

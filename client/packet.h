@@ -55,7 +55,7 @@ inline Jsonify &to_jsonify(Jsonify &jsonify, const Process &process) {
 }
 
 inline Jsonify &to_jsonify(Jsonify &jsonify, const Stats &stats) {
-  const auto ts = std::chrono::system_clock::now();
+  const auto ts = std::chrono::steady_clock::now();
   const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(ts.time_since_epoch()).count();
   jsonify["timestamp"] = ts_ms;
   jsonify["processor_frequency"] = stats.processor_frequency;
@@ -71,72 +71,80 @@ inline Jsonify &to_jsonify(Jsonify &jsonify, const Stats &stats) {
   return jsonify;
 }
 
+struct ProcessInfo {
+  int32_t pid;
+  std::string name;
+};
+
+inline Jsonify &to_jsonify(Jsonify &jsonify, const ProcessInfo &item) {
+  jsonify["pid"] = item.pid;
+  jsonify["name"] = item.name;
+  return jsonify;
+}
+
 class Packet {
  public:
   Packet();
   ~Packet();
 
  public:
-  void collate(Stats &, const std::list<std::string> &);
+  void collate(Stats &, const std::list<int32_t> &);
 
  public:
   std::string to_json(const Stats &stats) const {
-    const auto jsonify = Jsonify(stats).to_string() + "\r\n";  // \n is a delimiter
-    // Log::debug("jsonify: ", jsonify);
-    return jsonify;
-  }
-
- private:
-  template <typename T> std::string to_json_(const T &value) const { return std::to_string(value); }
-
-  std::string to_json_(const std::string &value) const { return "\"" + value + "\""; }
-
-  template <typename T> std::string to_json_(const std::list<T> &value) const {
-    std::string json = "[";
-    for (const auto &v : value) {
-      json += to_json_(v) + ",";
-    }
-    if (!value.empty()) {
-      json.pop_back();
-    }
-    json += "]";
-    return json;
-  }
-
-  std::string to_json_(const Thread &value) const {
-    std::string json = "{";
-    json += "\"tid\":" + to_json_(value.tid) + ",";
-    json += "}";
-    return json;
-  }
-
-  std::string to_json_(const Process &value) const {
-    std::string json = "{";
-    json += "\"pid\":" + to_json_(value.pid) + ",";
-    json += "\"name\":" + to_json_(value.name) + ",";
-    json += "\"memory\":" + to_json_(value.memory) + ",";
-    json += "\"threads\":" + to_json_(value.threads);
-    json += "}";
-    return json;
-  }
-
-  std::string to_json_(const Stats &value) const {
-    const auto ts = std::chrono::system_clock::now();
+    const auto ts = std::chrono::steady_clock::now();
     const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(ts.time_since_epoch()).count();
-    std::string json = "{";
-    json += "\"timestamp\":" + std::to_string(ts_ms) + ",";
-    json += "\"processor_frequency\":" + to_json_(value.processor_frequency) + ",";
-    json += "\"total_memory\":" + to_json_(value.total_memory) + ",";
-    json += "\"free_memory\":" + to_json_(value.free_memory) + ",";
-    json += "\"processes\":" + to_json_(value.processes) + ",";
-
-    // just astimate json length
-    const int64_t json_length = (json.size() + 1023) / 1024;
-    json += "\"json_length\":" + std::to_string(json_length);
-
-    json += "}";
-    return json;
+    Jsonify jsonify;
+    jsonify["type"] = "stats";
+    jsonify["timestamp"] = ts_ms;
+    jsonify["processor_frequency"] = stats.processor_frequency;
+    jsonify["cpu_user"] = stats.cpu_user;
+    jsonify["cpu_system"] = stats.cpu_system;
+    jsonify["cpu_idle"] = stats.cpu_idle;
+    jsonify["cpu_iowait"] = stats.cpu_iowait;
+    jsonify["cpu_irq"] = stats.cpu_irq;
+    jsonify["cpu_softirq"] = stats.cpu_softirq;
+    jsonify["total_memory"] = stats.total_memory;
+    jsonify["free_memory"] = stats.free_memory;
+    jsonify["processes"] = stats.processes;
+    return jsonify.to_string() + "\n";
   }
+
+  std::string to_heartbeat() const {
+    const auto ts = std::chrono::steady_clock::now();
+    const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(ts.time_since_epoch()).count();
+    Jsonify jsonify;
+    jsonify["type"] = "heartbeat";
+    jsonify["timestamp"] = ts_ms;
+    return jsonify.to_string() + "\n";
+  }
+
+  std::string to_process_list(const std::list<std::pair<int32_t, std::string>> &processes) const {
+    const auto ts = std::chrono::steady_clock::now();
+    const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(ts.time_since_epoch()).count();
+    std::list<ProcessInfo> items;
+    for (const auto &process : processes) {
+      items.push_back({process.first, process.second});
+    }
+    Jsonify jsonify;
+    jsonify["type"] = "process_list";
+    jsonify["timestamp"] = ts_ms;
+    jsonify["processes"] = items;
+    return jsonify.to_string() + "\n";
+  }
+
+  std::string to_filter_ack(int32_t matched_count) const {
+    const auto ts = std::chrono::steady_clock::now();
+    const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(ts.time_since_epoch()).count();
+    Jsonify jsonify;
+    jsonify["type"] = "filter_ack";
+    jsonify["timestamp"] = ts_ms;
+    jsonify["matched_count"] = matched_count;
+    return jsonify.to_string() + "\n";
+  }
+
+  std::list<ProcessInfo> get_process_list() const;
+  bool process_list_changed() const;
 
  private:
   class ImplPacket;

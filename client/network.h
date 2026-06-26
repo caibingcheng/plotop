@@ -11,6 +11,7 @@ class Network {
 
  public:
   void send(const std::string &data);
+  std::string recv();
   bool ready() const;
 
  private:

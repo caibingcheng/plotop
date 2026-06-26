@@ -5,7 +5,7 @@ CROSSCOMPILER ?=
 CXX := $(CROSSCOMPILER)g++
 
 # Compiler flags
-CXXFLAGS := -std=c++17 -Wall -static
+CXXFLAGS := -std=c++17 -Wall
 
 # Linker flags
 LDFLAGS := -lstdc++fs -pthread -static-libstdc++ -static-libgcc
