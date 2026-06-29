@@ -8,9 +8,10 @@ export interface HttpServerInfo {
   httpServer: http.Server;
   io: SocketIoServer;
   app: Express;
+  actualPort: number;
 }
 
-export function startHttpServer(host: string, port: number, rendererPath: string): HttpServerInfo {
+export async function startHttpServer(host: string, preferredPort: number, rendererPath: string): Promise<HttpServerInfo> {
   const app = express();
   const httpServer = http.createServer(app);
   const io = new SocketIoServer(httpServer, {
@@ -29,10 +30,28 @@ export function startHttpServer(host: string, port: number, rendererPath: string
     res.sendFile(path.join(rendererPath, 'plot.html'));
   });
 
+  const actualPort = await listenOnAvailablePort(httpServer, host, preferredPort);
+
+  console.log(`Web server starting on http://${host}:${actualPort}`);
+
   io.on('connection', (socket) => {
     for (const [ip, client] of clients.entries()) {
       socket.emit('new_ip', { ip, alive: client.alive });
     }
+
+    socket.on('config:get_tcp_port', () => {
+      const tcpServerManager = (global as any).__tcpServerManager;
+      const port = tcpServerManager ? tcpServerManager.getPort() : 8001;
+      socket.emit('config:tcp_port', port);
+    });
+
+    socket.on('config:set_tcp_port', (message) => {
+      const requested = message?.port;
+      if (!requested || typeof requested !== 'number') return;
+      const tcpServerManager = (global as any).__tcpServerManager;
+      if (!tcpServerManager) return;
+      tcpServerManager.changePort(requested);
+    });
 
     socket.on('subscribe', (message) => {
       const ip = message?.ip;
@@ -76,11 +95,40 @@ export function startHttpServer(host: string, port: number, rendererPath: string
     });
   });
 
-  httpServer.listen(port, host, () => {
-    console.log(`Web server starting on http://${host}:${port}`);
-  });
+  return { httpServer, io, app, actualPort };
+}
 
-  return { httpServer, io, app };
+function listenOnAvailablePort(
+  server: http.Server,
+  host: string,
+  preferredPort: number,
+  maxAttempts: number = 100
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let port = preferredPort;
+    let attempts = 0;
+
+    function tryListen() {
+      server.once('error', onError);
+      server.listen(port, host, () => {
+        server.removeListener('error', onError);
+        resolve(port);
+      });
+
+      function onError(err: any) {
+        server.removeListener('error', onError);
+        if (err.code === 'EADDRINUSE' && attempts < maxAttempts) {
+          attempts++;
+          port++;
+          tryListen();
+        } else {
+          reject(err);
+        }
+      }
+    }
+
+    tryListen();
+  });
 }
 
 function requestProcessListFromClient(ip: string) {

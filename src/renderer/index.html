@@ -115,9 +115,52 @@
             font-size: 14px;
         }
 
-        .empty-hint .hint-detail {
+        .tcp-port-config {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            background-color: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .tcp-port-config label {
+            font-weight: bold;
+        }
+
+        .tcp-port-config input {
+            width: 70px;
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            text-align: center;
+        }
+
+        .tcp-port-config button {
+            padding: 6px 14px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
             font-size: 13px;
-            color: #aaa;
+        }
+
+        .tcp-port-config button:hover {
+            background-color: #45a049;
+        }
+
+        .tcp-port-config .status {
+            font-size: 12px;
+            color: #888;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
@@ -192,6 +235,40 @@
                     }
                 }
             });
+
+            var tcpPortInput = document.getElementById("tcpPortInput");
+            var tcpPortStatus = document.getElementById("tcpPortStatus");
+            var clientCommandEl = document.getElementById("clientCommand");
+
+            function updateClientCommand(port) {
+                if (clientCommandEl) {
+                    clientCommandEl.textContent = './plotop -i <server_ip> -p ' + port + ' -d 1';
+                }
+            }
+
+            socket.emit('config:get_tcp_port');
+            socket.on('config:tcp_port', function (port) {
+                if (tcpPortInput) {
+                    tcpPortInput.value = port;
+                }
+                updateClientCommand(port);
+                if (tcpPortStatus) {
+                    tcpPortStatus.textContent = '当前 TCP 端口: ' + port;
+                }
+            });
+
+            var applyTcpPortBtn = document.getElementById("applyTcpPort");
+            if (applyTcpPortBtn) {
+                applyTcpPortBtn.addEventListener('click', function () {
+                    var newPort = parseInt(tcpPortInput.value, 10);
+                    if (!newPort || newPort < 1 || newPort > 65535) {
+                        if (tcpPortStatus) tcpPortStatus.textContent = '请输入 1-65535 之间的端口';
+                        return;
+                    }
+                    socket.emit('config:set_tcp_port', { port: newPort });
+                    if (tcpPortStatus) tcpPortStatus.textContent = '切换中...';
+                });
+            }
         });
     </script>
 </head>
@@ -202,10 +279,16 @@
             <h1>Plotop Clients</h1>
             <p>已连接的客户端列表，点击 IP 查看实时性能数据</p>
         </header>
+        <div class="tcp-port-config">
+            <label for="tcpPortInput">TCP 端口</label>
+            <input id="tcpPortInput" type="number" min="1" max="65535" value="8001" />
+            <button id="applyTcpPort">应用</button>
+            <span class="status" id="tcpPortStatus">当前 TCP 端口: 8001</span>
+        </div>
         <div id="emptyHint" class="empty-hint">
             <h3>暂无客户端连接 / No clients connected</h3>
             <p>请先启动 plotop client，将性能数据发送到本服务端：</p>
-            <code>./plotop -i &lt;server_ip&gt; -p 8001 -d 1</code>
+            <code id="clientCommand">./plotop -i &lt;server_ip&gt; -p 8001 -d 1</code>
             <p class="hint-detail">更多用法请参考 README.md</p>
         </div>
         <div id="ipList" class="ip-list"></div>

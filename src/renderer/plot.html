@@ -1014,6 +1014,10 @@
                 this.textContent = is_paused ? "Resume Chart" : "Pause Chart";
             });
 
+            document.getElementById("goHome").addEventListener("click", function () {
+                window.location.href = '/';
+            });
+
             document.getElementById("exportPage").addEventListener("click", exportPageAsPNG);
             document.getElementById("exportOfflineHtml").addEventListener("click", exportOfflineHtml);
             document.getElementById("clearData").addEventListener("click", function () {
@@ -1053,6 +1057,7 @@
         <button id="exportPage">Export as PNG</button>
         <button id="exportOfflineHtml">Export Offline HTML</button>
         <button id="clearData">Clear Data</button>
+        <button id="goHome">Home</button>
     </div>
 
     <div id="filter-panel">

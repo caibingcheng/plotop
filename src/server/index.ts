@@ -5,6 +5,8 @@ import { startTcpServer } from './tcp-server';
 
 export interface ServerConfig {
   web: boolean;
+  preferredHttpPort?: number;
+  preferredTcpPort?: number;
 }
 
 export interface ServerInfo {
@@ -21,15 +23,16 @@ function resolveRendererPath(): string {
   return path.resolve(__dirname, '..', '..', 'src', 'renderer');
 }
 
-export function startServer(config: ServerConfig): Promise<ServerInfo> {
+export async function startServer(config: ServerConfig): Promise<ServerInfo> {
   const httpHost = config.web ? '0.0.0.0' : '127.0.0.1';
-  const httpPort = 5000;
-  const tcpPort = 8001;
+  const httpPort = config.preferredHttpPort ?? 5000;
+  const tcpPort = config.preferredTcpPort ?? 8001;
 
   const rendererPath = resolveRendererPath();
 
-  const { io } = startHttpServer(httpHost, httpPort, rendererPath);
-  startTcpServer(io);
+  const { io, actualPort } = await startHttpServer(httpHost, httpPort, rendererPath);
+  const tcpServerManager = startTcpServer(io, tcpPort);
+  (global as any).__tcpServerManager = tcpServerManager;
 
-  return Promise.resolve({ host: httpHost, port: httpPort, tcpPort });
+  return { host: httpHost, port: actualPort, tcpPort: tcpServerManager.getPort() };
 }

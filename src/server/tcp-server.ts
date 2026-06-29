@@ -4,52 +4,112 @@ import * as path from 'path';
 import { Server as SocketIoServer } from 'socket.io';
 import { clients, getOrCreateClient, ClientState, AsyncMessageQueue } from './store';
 
-const TCP_PORT = 8001;
+function isIgnorableSocketError(err: any): boolean {
+  return err && (err.code === 'EPIPE' || err.code === 'ECONNRESET');
+}
+
+const DEFAULT_TCP_PORT = 8001;
 const TCP_HOST = '0.0.0.0';
 
-export function startTcpServer(io: SocketIoServer): net.Server {
-  const server = net.createServer((clientSocket) => {
-    const addr = clientSocket.address() as net.AddressInfo;
-    const clientIp = extractIp(clientSocket);
+export interface TcpServerManager {
+  getPort(): number;
+  changePort(port: number): void;
+}
 
-    clientSocket.setTimeout(90000);
+export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAULT_TCP_PORT): TcpServerManager {
+  let server: net.Server | null = null;
+  let currentPort = preferredPort;
 
-    const client = getOrCreateClient(clientIp);
-    cleanupOldConnection(client);
+  function createServer(): net.Server {
+    const newServer = net.createServer((clientSocket) => {
+      const addr = clientSocket.address() as net.AddressInfo;
+      const clientIp = extractIp(clientSocket);
 
-    client.socket = clientSocket;
-    client.outbound = new AsyncMessageQueue();
-    client.lastSeen = new Date();
-    client.alive = true;
-    client.hasProcessList = false;
-    client.lastProcessList = {};
-    client.dataSequence = (client.dataSequence || 0) + 1;
-    client.data = [];
-    client.subscribed = { count: 10, lastTime: new Date() };
+      clientSocket.setTimeout(90000);
 
-    io.emit(`clear/${clientIp}`, {});
+      const client = getOrCreateClient(clientIp);
+      cleanupOldConnection(client);
 
-    const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
-    const filename = path.join('log', `plotop_${timestamp}_${clientIp}.txt`);
+      client.socket = clientSocket;
+      client.outbound = new AsyncMessageQueue();
+      client.lastSeen = new Date();
+      client.alive = true;
+      client.hasProcessList = false;
+      client.lastProcessList = {};
+      client.dataSequence = (client.dataSequence || 0) + 1;
+      client.data = [];
+      client.subscribed = { count: 10, lastTime: new Date() };
 
-    const readerPromise = clientReader(clientSocket, clientIp, filename, io);
-    const writerPromise = clientWriter(clientSocket, clientIp);
+      io.emit(`clear/${clientIp}`, {});
 
-    Promise.all([readerPromise, writerPromise]).then(() => {
-      client.alive = false;
-      safeClose(clientSocket);
-    }).catch((err) => {
-      console.error(`Client handler error for ${clientIp}:`, err);
-      client.alive = false;
-      safeClose(clientSocket);
+      const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
+      const filename = path.join('log', `plotop_${timestamp}_${clientIp}.txt`);
+
+      const readerPromise = clientReader(clientSocket, clientIp, filename, io, client.outbound);
+      const writerPromise = clientWriter(clientSocket, clientIp);
+
+      Promise.all([readerPromise, writerPromise]).then(() => {
+        client.alive = false;
+        safeClose(clientSocket);
+      }).catch((err) => {
+        console.error(`Client handler error for ${clientIp}:`, err);
+        client.alive = false;
+        safeClose(clientSocket);
+      });
     });
-  });
 
-  server.listen(TCP_PORT, TCP_HOST, () => {
-    console.log(`Raw socket server listening on ${TCP_HOST}:${TCP_PORT}`);
-  });
+    return newServer;
+  }
 
-  return server;
+  function listen(port: number): void {
+    server = createServer();
+    server.listen(port, TCP_HOST, () => {
+      currentPort = port;
+      console.log(`Raw socket server listening on ${TCP_HOST}:${port}`);
+      io.emit('config:tcp_port', port);
+    });
+
+    server.on('error', (err: any) => {
+      console.error(`Raw socket server error on port ${port}:`, err);
+    });
+  }
+
+  function close(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!server) {
+        resolve();
+        return;
+      }
+
+      for (const [, client] of clients) {
+        client.alive = false;
+        client.outbound.put(null);
+        if (client.socket) {
+          safeClose(client.socket);
+        }
+      }
+
+      server.close(() => {
+        server = null;
+        resolve();
+      });
+    });
+  }
+
+  listen(preferredPort);
+
+  return {
+    getPort: () => currentPort,
+    changePort: (port: number) => {
+      if (port === currentPort) return;
+      close().then(() => {
+        console.log(`TCP port changed from ${currentPort} to ${port}`);
+        listen(port);
+      }).catch((err) => {
+        console.error('Failed to change TCP port:', err);
+      });
+    },
+  };
 }
 
 function extractIp(socket: net.Socket): string {
@@ -88,7 +148,8 @@ async function clientReader(
   clientSocket: net.Socket,
   ip: string,
   filename: string,
-  io: SocketIoServer
+  io: SocketIoServer,
+  outbound: AsyncMessageQueue
 ) {
   let buffer = Buffer.alloc(0);
   let dataIndex = 0;
@@ -154,6 +215,7 @@ async function clientReader(
   } finally {
     const client = clients.get(ip);
     if (client) client.alive = false;
+    outbound.put(null);
     safeClose(clientSocket);
   }
 }
@@ -275,9 +337,19 @@ async function clientWriter(clientSocket: net.Socket, ip: string) {
 
 function writeToSocket(socket: net.Socket, data: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (socket.destroyed || (socket as any).writableEnded) {
+      return resolve();
+    }
     socket.write(data, 'utf-8', (err) => {
-      if (err) reject(err);
-      else resolve();
+      if (err) {
+        if (isIgnorableSocketError(err)) {
+          resolve();
+        } else {
+          reject(err);
+        }
+      } else {
+        resolve();
+      }
     });
   });
 }
