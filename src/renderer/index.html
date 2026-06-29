@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <title>Client IPs</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <title>Plotop - Clients</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -123,16 +123,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
     <script type="text/javascript">
         document.addEventListener("DOMContentLoaded", function () {
-            var socket = io.connect('http://' + document.domain + ':' + location.port);
-            var displayedIps = new Set();
-            // init from existing ip items
-            var items = document.getElementsByClassName("ip-item");
-            for (var i = 0; i < items.length; i++) {
-                var ipText = items[i].querySelector(".ip-text");
-                if (ipText) {
-                    displayedIps.add(ipText.innerHTML);
-                }
+            var params = new URLSearchParams(window.location.search);
+            var ipParam = params.get('ip');
+            if (ipParam) {
+                window.location.href = '/plot?ip=' + encodeURIComponent(ipParam);
+                return;
             }
+
+            var socket = io.connect('/');
+            var displayedIps = new Set();
 
             function hideEmptyHint() {
                 var emptyHint = document.getElementById("emptyHint");
@@ -141,15 +140,15 @@
                 }
             }
 
-            function createIpItem(ip) {
+            function createIpItem(ip, alive) {
                 var item = document.createElement("div");
                 item.className = "ip-item";
                 item.onclick = function () {
-                    window.location.href = '/?ip=' + ip;
+                    window.location.href = '/plot?ip=' + encodeURIComponent(ip);
                 };
 
                 var dot = document.createElement("span");
-                dot.className = "status-dot online";
+                dot.className = "status-dot " + (alive ? "online" : "offline");
 
                 var text = document.createElement("span");
                 text.className = "ip-text";
@@ -165,14 +164,31 @@
                 return item;
             }
 
+            function updateIpItem(ip, alive) {
+                var items = document.getElementsByClassName("ip-item");
+                for (var i = 0; i < items.length; i++) {
+                    var text = items[i].querySelector(".ip-text");
+                    if (text && text.innerHTML === ip) {
+                        var dot = items[i].querySelector(".status-dot");
+                        if (dot) {
+                            dot.className = "status-dot " + (alive ? "online" : "offline");
+                        }
+                        return;
+                    }
+                }
+            }
+
             socket.on('new_ip', function (data) {
                 hideEmptyHint();
                 var ip = data.ip;
-                if (!displayedIps.has(ip)) {
+                if (!ip) return;
+                if (displayedIps.has(ip)) {
+                    updateIpItem(ip, data.alive);
+                } else {
                     displayedIps.add(ip);
                     var ipList = document.getElementById("ipList");
                     if (ipList) {
-                        ipList.appendChild(createIpItem(ip));
+                        ipList.appendChild(createIpItem(ip, data.alive));
                     }
                 }
             });
@@ -186,21 +202,13 @@
             <h1>Plotop Clients</h1>
             <p>已连接的客户端列表，点击 IP 查看实时性能数据</p>
         </header>
-        <div id="emptyHint" class="empty-hint" {% if client_ips %}style="display: none;"{% endif %}>
+        <div id="emptyHint" class="empty-hint">
             <h3>暂无客户端连接 / No clients connected</h3>
             <p>请先启动 plotop client，将性能数据发送到本服务端：</p>
             <code>./plotop -i &lt;server_ip&gt; -p 8001 -d 1</code>
             <p class="hint-detail">更多用法请参考 README.md</p>
         </div>
-        <div id="ipList" class="ip-list">
-            {% for ip in client_ips %}
-            <div class="ip-item" onclick="window.location.href='/?ip={{ ip }}'">
-                <span class="status-dot {{ 'online' if client_alive.get(ip, False) else 'offline' }}"></span>
-                <span class="ip-text">{{ ip }}</span>
-                <span class="ip-arrow">›</span>
-            </div>
-            {% endfor %}
-        </div>
+        <div id="ipList" class="ip-list"></div>
     </div>
 </body>
 

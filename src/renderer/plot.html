@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <title>Plot Data</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <title>Plotop - Plot Data</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -342,15 +342,15 @@
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 确保 Chart.js 在前 -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script> <!-- 确保适配器在后 -->
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas"></script> <!-- 添加 html2canvas 库 -->
-    <script src="/static/plotop-chart-core.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas"></script>
+    <script src="/plotop-chart-core.js"></script>
     <script type="text/javascript">
         var data_storage = {
             data: [],
             prev_raw: null,
-            duration: 60, // 60 seconds
+            duration: 60,
             add(data) {
                 if (this.prev_raw === null) {
                     this.prev_raw = data;
@@ -416,7 +416,6 @@
                 let summary_cpu_idle = (cpu_idle[0] - prev_cpu_idle[0]) / cpu_cost * 100;
 
                 let cpu_cores = [];
-                // index 0 mean total
                 for (let i = 1; i < cpu_user.length; i++) {
                     let core_cost = addByIndex(cpu_arr, i) - addByIndex(prev_cpu_arr, i);
                     cpu_cores.push({
@@ -465,7 +464,7 @@
                                 pid: pid,
                                 name: name,
                                 cpu_usage: summary_process_cpu_usage,
-                                memory: process.memory / 1024, // 转换为 MB
+                                memory: process.memory / 1024,
                                 threads: threads,
                             });
                             break;
@@ -474,10 +473,10 @@
                 }
 
                 let parse_data = {
-                    timestamp: new Date(data.timestamp), // 转换为 Date 对象, timestamp 是ms
-                    free_memory: data.free_memory / 1024, // 转换为 MB
-                    used_memory: (data.total_memory - data.free_memory) / 1024, // 转换为 MB
-                    total_memory: data.total_memory / 1024, // 转换为 MB
+                    timestamp: new Date(data.timestamp),
+                    free_memory: data.free_memory / 1024,
+                    used_memory: (data.total_memory - data.free_memory) / 1024,
+                    total_memory: data.total_memory / 1024,
                     cpu_usage: summary_cpu_usage,
                     cpu_idle: summary_cpu_idle,
                     cpu_cores: cpu_cores,
@@ -512,13 +511,12 @@
             filtered(now) {
                 const filtered_data = this.data.filter(item => (now - item.timestamp) / 1000 <= this.duration + 10);
 
-                // 多显示一个数据点
                 const extended_data = [...filtered_data];
                 if (filtered_data.length > 0) {
                     const first_data_point = filtered_data[0];
                     extended_data.unshift({
                         ...first_data_point,
-                        timestamp: first_data_point.timestamp - 1000 // 假设间隔为 1 秒
+                        timestamp: first_data_point.timestamp - 1000
                     });
                 }
                 return extended_data;
@@ -532,13 +530,13 @@
 
         function exportPageAsPNG() {
             const configElement = document.getElementById('config');
-            configElement.style.display = 'none'; // 隐藏 config 部分
+            configElement.style.display = 'none';
             html2canvas(document.body).then(canvas => {
                 const link = document.createElement('a');
                 link.download = 'exported_page.png';
                 link.href = canvas.toDataURL('image/png');
                 link.click();
-                configElement.style.display = ''; // 恢复 config 部分
+                configElement.style.display = '';
             });
         }
 
@@ -631,7 +629,7 @@
         }
 
         function exportOfflineHtml() {
-            const ip = "{{ ip }}";
+            const ip = new URLSearchParams(window.location.search).get('ip') || '';
             const ipSafe = ip.replace(/\./g, '_');
             const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
             const filename = `plotop_${ipSafe}_${timestamp}.html`;
@@ -652,7 +650,7 @@
 
             Promise.all([
                 fetch('https://cdn.jsdelivr.net/npm/chart.js').then(r => r.text()),
-                fetch('/static/plotop-chart-core.js').then(r => r.text())
+                fetch('/plotop-chart-core.js').then(r => r.text())
             ]).then(([chartJsSrc, coreSrc]) => {
                 const styles = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
                 const html = buildOfflineHtml(exportData, chartJsSrc, coreSrc, styles);
@@ -664,11 +662,16 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            var socket = io.connect('http://' + document.domain + ':' + location.port);
-            var ip = "{{ ip }}";
-            var first_data_received = false; // 标记是否收到第一个数据
-            var after_clear = false; // 标记是否在 clear 后收到数据
-            var is_paused = false; // 标记图表是否暂停
+            var socket = io.connect('/');
+            var ip = new URLSearchParams(window.location.search).get('ip') || '';
+            var first_data_received = false;
+            var after_clear = false;
+            var is_paused = false;
+
+            if (!ip) {
+                alert('Missing IP parameter');
+                return;
+            }
 
             function hideWaitingOverlay() {
                 const overlay = document.getElementById('waitingOverlay');
@@ -710,7 +713,6 @@
                 let stat = JSON.parse(data.data);
                 data_storage.add(stat);
 
-                // 如果是第一次收到数据或 clear 后的第一次数据，自动点击 updateChart
                 if ((!first_data_received || after_clear) && (data_storage.length() > 0)) {
                     first_data_received = true;
                     after_clear = false;
@@ -726,7 +728,6 @@
                     }
                 }
 
-                // keep alive
                 subscribe();
             });
 
@@ -735,7 +736,6 @@
                 content.innerHTML = '';
                 data_storage.clear();
 
-                // 销毁所有系统图表实例并清空引用
                 for (const key in system_charts) {
                     const sc = system_charts[key];
                     if (sc && sc.chart) {
@@ -744,7 +744,6 @@
                 }
                 system_charts = {};
 
-                // 销毁所有进程图表实例并清空引用
                 for (const pid in process_charts) {
                     const pc = process_charts[pid];
                     if (pc) {
@@ -755,7 +754,6 @@
                 }
                 process_charts = {};
 
-                // 标记为 clear 后的状态
                 after_clear = true;
                 first_data_received = false;
                 showWaitingOverlay();
@@ -780,7 +778,6 @@
             function applyMetricsModal() {
                 const value = metricsModalInput.value;
                 const metrics = value.split(/[\n,]+/).map(metric => metric.trim()).filter(metric => metric);
-                // Only allow modifying system metrics; pid= metrics come from the process filter dialog.
                 const allowedSystemMetrics = ["free_memory", "used_memory", "total_memory", "cpu_usage", "cpu_idle", "cpu_cores"];
                 const systemMetrics = metrics.filter(m => allowedSystemMetrics.includes(m));
                 selectedSystemMetrics.length = 0;
@@ -832,7 +829,6 @@
             function updateDurationForCharts(duration) {
                 data_storage.setDuration(duration);
 
-                // 更新系统图表范围和刻度
                 if (system_charts['system_memory']) {
                     system_charts['system_memory'].chart.options.scales.x = getCommonXAxisConfig(duration);
                 }
@@ -843,7 +839,6 @@
                     system_charts['system_cores'].chart.options.scales.x = getCommonXAxisConfig(duration);
                 }
 
-                // 更新进程图表范围和刻度
                 for (const pid in process_charts) {
                     const process_chart = process_charts[pid];
                     if (process_chart) {
@@ -1098,9 +1093,7 @@
                 <strong>Examples:</strong><br>
                 System metrics:
                 <code>free_memory</code>, <code>used_memory</code>, <code>total_memory</code>,
-                <code>cpu_usage</code>, <code>cpu_idle</code>, <code>cpu_cores</code><br>
-                Process metrics:
-                <code>pid=&lt;pid&gt;</code>, <code>comm=&lt;process_name&gt;</code><br><br>
+                <code>cpu_usage</code>, <code>cpu_idle</code>, <code>cpu_cores</code><br><br>
                 Multiple metrics can be separated by commas or new lines.
             </div>
             <div class="modal-buttons">

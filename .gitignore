@@ -2,6 +2,9 @@
 __pycache__/
 build/
 log/
+node_modules/
+dist/
+release/
 
 .editorconfig
 *.pyc
