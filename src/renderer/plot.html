@@ -279,8 +279,21 @@
             width: 10px;
             height: 10px;
             border-radius: 50%;
-            margin-right: 8px;
+            margin-right: 4px;
             vertical-align: middle;
+            cursor: pointer;
+        }
+
+        .random-color-btn {
+            cursor: pointer;
+            margin-right: 6px;
+            font-size: 12px;
+            user-select: none;
+            vertical-align: middle;
+        }
+
+        .random-color-btn:hover {
+            opacity: 0.7;
         }
 
         #content table tbody tr {
@@ -551,6 +564,29 @@
         var process_charts = {};
         var selectedPids = new Set();
         var selectedSystemMetrics = ["used_memory", "cpu_usage", "cpu_cores"];
+        var colorOverrides = {};
+        var currentIp = '';
+
+        function getColorStorageKey(ip) {
+            return 'plotop_colors_' + (ip || 'default');
+        }
+
+        function loadColorOverridesForIp(ip) {
+            try {
+                const raw = localStorage.getItem(getColorStorageKey(ip));
+                colorOverrides = raw ? JSON.parse(raw) : {};
+            } catch (e) {
+                colorOverrides = {};
+            }
+        }
+
+        function saveColorOverridesForIp() {
+            try {
+                localStorage.setItem(getColorStorageKey(currentIp), JSON.stringify(colorOverrides));
+            } catch (e) {
+                console.error('Failed to save color overrides:', e);
+            }
+        }
 
         function exportPageAsPNG() {
             const configElement = document.getElementById('config');
@@ -586,6 +622,7 @@
             const dataJson = JSON.stringify(exportData.data);
             const metricsJson = JSON.stringify(exportData.selectedSystemMetrics);
             const pidsJson = JSON.stringify(exportData.selectedPids);
+            const colorOverridesJson = JSON.stringify(exportData.colorOverrides || {});
             const duration = exportData.duration;
             const ip = exportData.ip;
             const timestamp = exportData.timestamp;
@@ -634,6 +671,7 @@
             parts.push('        var process_charts = {};');
             parts.push('        var selectedPids = new Set(' + pidsJson + ');');
             parts.push('        var selectedSystemMetrics = ' + metricsJson + ';');
+            parts.push('        var colorOverrides = ' + colorOverridesJson + ';');
             parts.push('        document.addEventListener("DOMContentLoaded", function() {');
             parts.push('            updateChart();');
             parts.push('            if (data_storage.data.length > 0) {');
@@ -669,6 +707,7 @@
                 duration: data_storage.duration,
                 selectedSystemMetrics: Array.from(selectedSystemMetrics),
                 selectedPids: Array.from(selectedPids),
+                colorOverrides: { ...colorOverrides },
                 data: JSON.parse(JSON.stringify(data_storage.data))
             };
 
@@ -687,7 +726,9 @@
 
         document.addEventListener("DOMContentLoaded", function () {
             var socket = io.connect('/');
-            var ip = new URLSearchParams(window.location.search).get('ip') || '';
+            currentIp = new URLSearchParams(window.location.search).get('ip') || '';
+            loadColorOverridesForIp(currentIp);
+            var ip = currentIp;
             var first_data_received = false;
             var after_clear = false;
             var is_paused = false;
@@ -1123,6 +1164,11 @@
 
             document.getElementById("exportPage").addEventListener("click", exportPageAsPNG);
             document.getElementById("exportOfflineHtml").addEventListener("click", exportOfflineHtml);
+            document.getElementById("randomColorsBtn").addEventListener("click", function () {
+                if (typeof randomizeAllColors === 'function') {
+                    randomizeAllColors();
+                }
+            });
             document.getElementById("clearData").addEventListener("click", function () {
                 if (confirm("Clear all collected data for " + ip + " and re-collect?")) {
                     socket.emit('clear_data', { ip: ip });
@@ -1159,6 +1205,7 @@
         <button id="pauseChart">Pause Chart</button>
         <button id="exportPage">Export as PNG</button>
         <button id="exportOfflineHtml">Export Offline HTML</button>
+        <button id="randomColorsBtn">Random Colors</button>
         <button id="clearData">Clear Data</button>
         <button id="goHome">Home</button>
     </div>

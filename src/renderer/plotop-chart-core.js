@@ -166,7 +166,11 @@ function updateStatistics(chart, stats_container_id, flash = false) {
                     data-max="${row.max}"
                     data-stdDev="${row.stdDev}"
                     title="点击隐藏/显示该线条">
-                    <td><span class="color-dot" style="background-color: ${row.color};"></span>${row.metric}</td>
+                    <td>
+                        <span class="color-dot" style="background-color: ${row.color};" title="点击选择颜色"></span>
+                        <span class="random-color-btn" title="随机颜色">🎲</span>
+                        ${row.metric}
+                    </td>
                     <td>${row.avg}</td>
                     <td>${row.min}</td>
                     <td>${row.max}</td>
@@ -196,6 +200,46 @@ function updateStatistics(chart, stats_container_id, flash = false) {
                 stats_container.dataset.sortColumn = sortColumn;
                 stats_container.dataset.sortOrder = sortOrder;
                 renderTable();
+            });
+        });
+
+        // 添加颜色点选事件，用于打开取色器
+        const dots = stats_container.querySelectorAll('.color-dot');
+        dots.forEach(dot => {
+            dot.addEventListener('click', function (event) {
+                event.stopPropagation();
+                const metric = this.closest('tr').getAttribute('data-metric');
+                const dataset = datasets.find(d => d.label === metric);
+                if (!dataset) return;
+
+                const input = document.createElement('input');
+                input.type = 'color';
+                input.value = colorToHex(dataset.borderColor);
+                input.style.position = 'fixed';
+                input.style.opacity = '0';
+                input.style.pointerEvents = 'none';
+                document.body.appendChild(input);
+
+                input.addEventListener('input', function () {
+                    applyColorOverride(metric, this.value);
+                });
+                input.addEventListener('change', function () {
+                    setColorOverride(metric, this.value);
+                    updateAllStatistics();
+                    if (typeof saveColorOverridesForIp === 'function') saveColorOverridesForIp();
+                    document.body.removeChild(input);
+                });
+                input.click();
+            });
+        });
+
+        // 添加单条随机颜色按钮事件
+        const randomBtns = stats_container.querySelectorAll('.random-color-btn');
+        randomBtns.forEach(btn => {
+            btn.addEventListener('click', function (event) {
+                event.stopPropagation();
+                const metric = this.closest('tr').getAttribute('data-metric');
+                randomizeColorForLabel(metric);
             });
         });
 
@@ -721,6 +765,76 @@ function initProcessCharts(metrics) {
     }
 }
 
+function colorToHex(color) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    return ctx.fillStyle;
+}
+
+function setColorOverride(label, color) {
+    if (typeof colorOverrides === 'undefined') return;
+    colorOverrides[label] = color;
+    applyColorOverride(label, color);
+}
+
+function applyColorOverride(label, color) {
+    function updateChartDatasets(chart) {
+        if (!chart || !chart.data) return;
+        chart.data.datasets.forEach(dataset => {
+            if (dataset.label === label) {
+                dataset.borderColor = color;
+            }
+        });
+        chart.update('none');
+    }
+    updateChartDatasets(system_charts['system_memory']?.chart);
+    updateChartDatasets(system_charts['system_cpu']?.chart);
+    updateChartDatasets(system_charts['system_cores']?.chart);
+    for (const pid in process_charts) {
+        const pc = process_charts[pid];
+        if (pc) {
+            updateChartDatasets(pc.memory);
+            updateChartDatasets(pc.cpu);
+            updateChartDatasets(pc.thread_cpu);
+        }
+    }
+}
+
+function randomizeColorForLabel(label) {
+    const color = getRandomColor();
+    setColorOverride(label, color);
+    updateAllStatistics();
+    if (typeof saveColorOverridesForIp === 'function') saveColorOverridesForIp();
+    return color;
+}
+
+function randomizeAllColors() {
+    if (typeof colorOverrides === 'undefined') return;
+    const labels = new Set();
+    function collect(chart) {
+        if (!chart || !chart.data) return;
+        chart.data.datasets.forEach(dataset => labels.add(dataset.label));
+    }
+    collect(system_charts['system_memory']?.chart);
+    collect(system_charts['system_cpu']?.chart);
+    collect(system_charts['system_cores']?.chart);
+    for (const pid in process_charts) {
+        const pc = process_charts[pid];
+        if (pc) {
+            collect(pc.memory);
+            collect(pc.cpu);
+            collect(pc.thread_cpu);
+        }
+    }
+    labels.forEach(label => {
+        colorOverrides[label] = getRandomColor();
+        applyColorOverride(label, colorOverrides[label]);
+    });
+    updateAllStatistics();
+    if (typeof saveColorOverridesForIp === 'function') saveColorOverridesForIp();
+}
+
 // 随机颜色生成函数
 function getRandomColor() {
     const r = Math.floor(Math.random() * 255);
@@ -732,6 +846,9 @@ function getRandomColor() {
 // 根据 label 生成确定性颜色，保证同一 metric 刷新后颜色一致
 // 使用预定义调色板，避免相似 label 生成过于接近的颜色
 function getColorForLabel(label) {
+    if (typeof colorOverrides !== 'undefined' && colorOverrides && colorOverrides[label]) {
+        return colorOverrides[label];
+    }
     const palette = [
         '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
         '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
