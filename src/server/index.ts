@@ -25,8 +25,8 @@ function resolveRendererPath(): string {
 
 export async function startServer(config: ServerConfig): Promise<ServerInfo> {
   const httpHost = config.web ? '0.0.0.0' : '127.0.0.1';
-  const httpPort = config.preferredHttpPort ?? 5000;
-  const tcpPort = config.preferredTcpPort ?? 8001;
+  const httpPort = config.preferredHttpPort ?? 28080;
+  const tcpPort = config.preferredTcpPort ?? 28081;
 
   const rendererPath = resolveRendererPath();
 

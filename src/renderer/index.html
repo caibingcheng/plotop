@@ -281,14 +281,14 @@
         </header>
         <div class="tcp-port-config">
             <label for="tcpPortInput">TCP 端口</label>
-            <input id="tcpPortInput" type="number" min="1" max="65535" value="8001" />
+            <input id="tcpPortInput" type="number" min="1" max="65535" value="28081" />
             <button id="applyTcpPort">应用</button>
-            <span class="status" id="tcpPortStatus">当前 TCP 端口: 8001</span>
+            <span class="status" id="tcpPortStatus">当前 TCP 端口: 28081</span>
         </div>
         <div id="emptyHint" class="empty-hint">
             <h3>暂无客户端连接 / No clients connected</h3>
             <p>请先启动 plotop client，将性能数据发送到本服务端：</p>
-            <code id="clientCommand">./plotop -i &lt;server_ip&gt; -p 8001 -d 1</code>
+            <code id="clientCommand">./plotop -i &lt;server_ip&gt; -p 28081 -d 1</code>
             <p class="hint-detail">更多用法请参考 README.md</p>
         </div>
         <div id="ipList" class="ip-list"></div>

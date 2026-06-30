@@ -41,7 +41,7 @@ export async function startHttpServer(host: string, preferredPort: number, rende
 
     socket.on('config:get_tcp_port', () => {
       const tcpServerManager = (global as any).__tcpServerManager;
-      const port = tcpServerManager ? tcpServerManager.getPort() : 8001;
+      const port = tcpServerManager ? tcpServerManager.getPort() : 28081;
       socket.emit('config:tcp_port', port);
     });
 

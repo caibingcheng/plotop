@@ -1,4 +1,5 @@
 export interface ClientState {
+  id: number;
   subscribed: { count: number; lastTime: Date };
   alive: boolean;
   data: string[];
@@ -12,6 +13,8 @@ export interface ClientState {
 }
 
 export const clients = new Map<string, ClientState>();
+
+let clientIdCounter = 0;
 
 export class AsyncMessageQueue {
   private items: (string | null)[] = [];
@@ -31,15 +34,16 @@ export class AsyncMessageQueue {
       return this.items.shift()!;
     }
     return new Promise((resolve) => {
+      const resolver = (value: string | null) => {
+        clearTimeout(timer);
+        resolve(value);
+      };
       const timer = setTimeout(() => {
-        const idx = this.resolvers.indexOf(resolve);
+        const idx = this.resolvers.indexOf(resolver);
         if (idx > -1) this.resolvers.splice(idx, 1);
         resolve(undefined as any);
       }, timeoutMs);
-      this.resolvers.push((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      });
+      this.resolvers.push(resolver);
     });
   }
 }
@@ -48,6 +52,7 @@ export function getOrCreateClient(ip: string): ClientState {
   let client = clients.get(ip);
   if (!client) {
     client = {
+      id: ++clientIdCounter,
       subscribed: { count: 10, lastTime: new Date(0) },
       alive: false,
       data: [],

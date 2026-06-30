@@ -8,7 +8,7 @@ function isIgnorableSocketError(err: any): boolean {
   return err && (err.code === 'EPIPE' || err.code === 'ECONNRESET');
 }
 
-const DEFAULT_TCP_PORT = 8001;
+const DEFAULT_TCP_PORT = 28081;
 const TCP_HOST = '0.0.0.0';
 
 export interface TcpServerManager {
@@ -40,6 +40,11 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       client.data = [];
       client.subscribed = { count: 10, lastTime: new Date() };
 
+      if (client.filterPids && client.filterPids.length > 0) {
+        client.outbound.put(JSON.stringify({ type: 'filter', patterns: [], pids: client.filterPids }) + '\n');
+        console.log(`Re-sent filter to ${clientIp}: ${client.filterPids}`);
+      }
+
       io.emit(`clear/${clientIp}`, {});
 
       const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
@@ -70,7 +75,14 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
     });
 
     server.on('error', (err: any) => {
-      console.error(`Raw socket server error on port ${port}:`, err);
+      server?.removeAllListeners('error');
+      if (err.code === 'EADDRINUSE') {
+        const nextPort = port + 1;
+        console.warn(`Port ${port} in use, trying ${nextPort}`);
+        listen(nextPort);
+      } else {
+        console.error(`Raw socket server error on port ${port}:`, err);
+      }
     });
   }
 
