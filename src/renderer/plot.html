@@ -588,6 +588,65 @@
             }
         }
 
+        const DURATION_STORAGE_PREFIX = 'plotop_duration_';
+        function getDurationStorageKey(ip) {
+            return DURATION_STORAGE_PREFIX + (ip || 'default');
+        }
+
+        function restoreDurationForIp(ip) {
+            try {
+                const raw = localStorage.getItem(getDurationStorageKey(ip));
+                if (!raw) return;
+                const saved = JSON.parse(raw);
+                if (!saved || typeof saved.duration !== 'number' || saved.duration <= 0) return;
+
+                const durationSelect = document.getElementById("durationSelect");
+                const customWrapper = document.getElementById("customDurationWrapper");
+                const customDurationValue = document.getElementById("customDurationValue");
+                const customDurationUnit = document.getElementById("customDurationUnit");
+
+                if (saved.isCustom && saved.customValue != null) {
+                    durationSelect.value = "custom";
+                    customWrapper.style.display = "inline";
+                    customDurationValue.value = saved.customValue;
+                    customDurationUnit.value = saved.customUnit || "min";
+                } else {
+                    const option = durationSelect.querySelector(`option[value="${saved.duration}"]`);
+                    if (option) {
+                        durationSelect.value = String(saved.duration);
+                        customWrapper.style.display = "none";
+                    } else {
+                        durationSelect.value = "custom";
+                        customWrapper.style.display = "inline";
+                        const hours = saved.duration / 3600;
+                        if (hours >= 1 && Number.isInteger(hours)) {
+                            customDurationValue.value = hours;
+                            customDurationUnit.value = "hour";
+                        } else {
+                            customDurationValue.value = Math.round(saved.duration / 60);
+                            customDurationUnit.value = "min";
+                        }
+                    }
+                }
+                data_storage.setDuration(saved.duration);
+            } catch (e) {
+                console.error('Failed to restore duration:', e);
+            }
+        }
+
+        function saveDurationForIp(duration, isCustom) {
+            try {
+                const payload = { duration: duration, isCustom: isCustom };
+                if (isCustom) {
+                    payload.customValue = parseFloat(document.getElementById("customDurationValue").value) || null;
+                    payload.customUnit = document.getElementById("customDurationUnit").value;
+                }
+                localStorage.setItem(getDurationStorageKey(currentIp), JSON.stringify(payload));
+            } catch (e) {
+                console.error('Failed to save duration:', e);
+            }
+        }
+
         function exportPageAsPNG() {
             const configElement = document.getElementById('config');
             configElement.style.display = 'none';
@@ -728,6 +787,7 @@
             var socket = io.connect('/');
             currentIp = new URLSearchParams(window.location.search).get('ip') || '';
             loadColorOverridesForIp(currentIp);
+            restoreDurationForIp(currentIp);
             var ip = currentIp;
             var first_data_received = false;
             var after_clear = false;
@@ -939,6 +999,7 @@
                 const duration = getSelectedDuration();
                 if (duration !== null) {
                     updateDurationForCharts(duration);
+                    saveDurationForIp(duration, this.value === "custom");
                 }
             });
 
@@ -947,6 +1008,7 @@
                     const duration = getSelectedDuration();
                     if (duration !== null) {
                         updateDurationForCharts(duration);
+                        saveDurationForIp(duration, true);
                     }
                 }
             });
@@ -956,6 +1018,7 @@
                     const duration = getSelectedDuration();
                     if (duration !== null) {
                         updateDurationForCharts(duration);
+                        saveDurationForIp(duration, true);
                     }
                 }
             });
