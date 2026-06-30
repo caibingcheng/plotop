@@ -218,6 +218,14 @@ int32_t main(int32_t argc, char **argv) {
             throw std::runtime_error("Stopped");
           }
 
+          try {
+            if (packet->process_list_changed()) {
+              send_process_list_(network.get(), packet.get());
+            }
+          } catch (const std::exception &e) {
+            Log::error("Failed to send process list: ", e.what());
+          }
+
           Stats stats;
           const auto pids = filter_config.get();
           packet->collate(stats, pids);
