@@ -68,28 +68,52 @@
             margin-top: 0;
         }
 
-        #processList {
+        .process-section {
+            margin-bottom: 10px;
+        }
+
+        .process-section h4 {
+            margin: 0 0 6px 0;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .process-list {
             list-style: none;
             padding: 0;
-            max-height: 50vh;
+            max-height: 25vh;
             overflow-y: auto;
             border: 1px solid #ddd;
             border-radius: 4px;
             background-color: #fff;
-            margin: 10px 0;
+            margin: 0 0 8px 0;
         }
 
-        #processList li {
+        .process-list li {
             padding: 4px 8px;
             border-bottom: 1px solid #eee;
+            cursor: pointer;
         }
 
-        #processList li:last-child {
+        .process-list li:last-child {
             border-bottom: none;
         }
 
-        #processList input[type="checkbox"] {
+        .process-list li:hover {
+            background-color: #f5f5f5;
+        }
+
+        .process-list input[type="checkbox"] {
             margin-right: 8px;
+        }
+
+        .stale-process {
+            color: #d32f2f;
+            font-style: italic;
+        }
+
+        .stale-process label span {
+            opacity: 0.85;
         }
 
         #filterStatus {
@@ -897,55 +921,106 @@
 
             let allProcesses = [];
             let currentSearchQuery = '';
+            let lastKnownProcessNames = {};
+            let lastFilterStatus = null;
 
             socket.on('process_list/' + ip, function (msg) {
                 allProcesses = msg.processes || [];
+                allProcesses.forEach(function (process) {
+                    lastKnownProcessNames[process.pid] = process.name;
+                });
                 applySearch();
             });
 
             function applySearch() {
-                const query = currentSearchQuery;
-                if (!query) {
-                    renderProcessList(allProcesses);
-                    return;
-                }
-                const filtered = allProcesses.filter(function (process) {
-                    return String(process.pid).includes(query) || (process.name && process.name.toLowerCase().includes(query));
-                });
-                renderProcessList(filtered);
+                renderProcessList();
             }
 
-            function renderProcessList(processes) {
-                const processList = document.getElementById('processList');
-                if (!processList) return;
+            function createProcessListItem(pid, name, checked, isStale) {
+                const li = document.createElement('li');
+                if (isStale) {
+                    li.classList.add('stale-process');
+                }
+                li.style.cursor = 'pointer';
+                const label = document.createElement('label');
+                label.style.pointerEvents = 'none';
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = checked;
+                checkbox.style.pointerEvents = 'none';
 
-                processList.innerHTML = '';
-                processes.forEach(function (process) {
-                    const li = document.createElement('li');
-                    li.style.cursor = 'pointer';
-                    const label = document.createElement('label');
-                    label.style.pointerEvents = 'none';
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.value = process.pid;
-                    checkbox.checked = selectedPids.has(process.pid);
-                    checkbox.style.pointerEvents = 'none';
+                label.appendChild(checkbox);
 
-                    function toggle() {
-                        checkbox.checked = !checkbox.checked;
-                        if (checkbox.checked) {
-                            selectedPids.add(process.pid);
-                        } else {
-                            selectedPids.delete(process.pid);
+                const textSpan = document.createElement('span');
+                if (isStale) {
+                    const knownName = name ? name : 'unknown';
+                    textSpan.textContent = pid + ': ' + knownName + ' (is changed now)';
+                } else {
+                    textSpan.textContent = pid + ': ' + name;
+                }
+                label.appendChild(textSpan);
+                li.appendChild(label);
+
+                li.addEventListener('click', function () {
+                    if (checkbox.checked) {
+                        selectedPids.delete(pid);
+                    } else {
+                        selectedPids.add(pid);
+                        if (!isStale && name) {
+                            lastKnownProcessNames[pid] = name;
                         }
                     }
-
-                    li.addEventListener('click', toggle);
-                    label.appendChild(checkbox);
-                    label.appendChild(document.createTextNode(process.pid + ': ' + process.name));
-                    li.appendChild(label);
-                    processList.appendChild(li);
+                    renderProcessList();
                 });
+
+                return li;
+            }
+
+            function renderProcessList() {
+                const selectedSection = document.getElementById('selectedProcessSection');
+                const availableSection = document.getElementById('availableProcessSection');
+                const selectedList = document.getElementById('selectedProcessList');
+                const availableList = document.getElementById('availableProcessList');
+                if (!selectedList || !availableList) return;
+
+                selectedList.innerHTML = '';
+                availableList.innerHTML = '';
+
+                const selectedPidsSorted = Array.from(selectedPids).sort(function (a, b) { return a - b; });
+                selectedPidsSorted.forEach(function (pid) {
+                    const process = allProcesses.find(function (p) { return p.pid === pid; });
+                    if (process) {
+                        selectedList.appendChild(createProcessListItem(process.pid, process.name, true, false));
+                    } else {
+                        selectedList.appendChild(createProcessListItem(pid, lastKnownProcessNames[pid], true, true));
+                    }
+                });
+
+                if (selectedSection) {
+                    selectedSection.style.display = selectedPids.size > 0 ? 'block' : 'none';
+                }
+
+                const query = currentSearchQuery;
+                let available = allProcesses.filter(function (process) {
+                    return !selectedPids.has(process.pid);
+                });
+                if (query) {
+                    available = available.filter(function (process) {
+                        return String(process.pid).includes(query) || (process.name && process.name.toLowerCase().includes(query));
+                    });
+                }
+                available.sort(function (a, b) { return a.pid - b.pid; });
+                available.forEach(function (process) {
+                    availableList.appendChild(createProcessListItem(process.pid, process.name, false, false));
+                });
+
+                if (availableSection) {
+                    availableSection.style.display = available.length > 0 ? 'block' : 'none';
+                }
+
+                updateFilterStatus();
             }
 
             const processSearchInput = document.getElementById('processSearchInput');
@@ -957,15 +1032,43 @@
             }
 
             socket.on('filter_status/' + ip, function (msg) {
+                lastFilterStatus = msg;
+                updateFilterStatus();
+            });
+
+            function updateFilterStatus() {
                 const filterStatus = document.getElementById('filterStatus');
                 if (!filterStatus) return;
 
-                if (msg.matched_count > 0) {
-                    filterStatus.textContent = 'Filter applied: ' + msg.matched_count + ' of ' + msg.requested_count + ' selected processes currently running.';
-                } else {
-                    filterStatus.textContent = 'Filter applied, but none of the selected processes are currently running.';
+                const currentPidSet = new Set(allProcesses.map(function (process) { return process.pid; }));
+                let staleCount = 0;
+                selectedPids.forEach(function (pid) {
+                    if (!currentPidSet.has(pid)) {
+                        staleCount++;
+                    }
+                });
+
+                let text = '';
+                if (lastFilterStatus) {
+                    if (lastFilterStatus.matched_count > 0) {
+                        text = 'Filter applied: ' + lastFilterStatus.matched_count + ' of ' + lastFilterStatus.requested_count + ' selected processes currently running.';
+                    } else {
+                        text = 'Filter applied, but none of the selected processes are currently running.';
+                    }
+                } else if (selectedPids.size > 0) {
+                    text = selectedPids.size + ' process(es) selected.';
                 }
-            });
+
+                if (staleCount > 0) {
+                    text += (text ? ' ' : '') + staleCount + ' selected PID' + (staleCount > 1 ? 's are' : ' is') + ' changed now.';
+                }
+
+                if (!text) {
+                    text = 'No processes selected.';
+                }
+
+                filterStatus.textContent = text;
+            }
 
             const filterPanel = document.getElementById('filter-panel');
             const filterButton = document.getElementById('filterButton');
@@ -1065,7 +1168,14 @@
             <h3>Select Processes</h3>
             <input type="text" id="processSearchInput" placeholder="Search pid or name..."
                 style="width: 100%; padding: 6px; margin-bottom: 8px; box-sizing: border-box;">
-            <ul id="processList"></ul>
+            <div id="selectedProcessSection" class="process-section">
+                <h4>Selected</h4>
+                <ul id="selectedProcessList" class="process-list"></ul>
+            </div>
+            <div id="availableProcessSection" class="process-section">
+                <h4>Available</h4>
+                <ul id="availableProcessList" class="process-list"></ul>
+            </div>
             <div class="modal-buttons">
                 <button id="cancelFilterBtn">Cancel</button>
                 <button id="applyFilterBtn" style="background-color: #4CAF50; color: white;">Apply Filter</button>
