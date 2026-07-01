@@ -1,14 +1,15 @@
 {
   "name": "plotop",
-  "version": "0.0.0",
+  "version": "0.2.3-dev.8+g8703b03fb",
   "description": "Real-time performance plotting application",
+  "author": "caibingcheng <jack_cbc@163.com>",
   "main": "dist/main.js",
   "scripts": {
     "dev": "ts-node src/main.ts",
-    "build": "tsc && rm -rf dist/renderer && cp -r src/renderer dist/renderer && node scripts/copy-vendor.js",
+    "build": "tsc && rimraf dist/renderer && ncp src/renderer dist/renderer && node scripts/copy-vendor.js",
     "start": "electron dist/main.js",
     "web": "electron dist/main.js --web",
-    "dist": "electron-builder"
+    "dist": "node scripts/sync-version.js && electron-builder"
   },
   "build": {
     "appId": "com.caibingcheng.plotop",
@@ -28,9 +29,13 @@
       "icon": "assets/icon.png"
     },
     "linux": {
-      "target": "AppImage",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "assets/icon.png",
       "category": "Development",
+      "maintainer": "caibingcheng <jack_cbc@163.com>",
       "desktop": {
         "StartupWMClass": "Plotop"
       }
@@ -53,6 +58,8 @@
     "@types/node": "^20.14.0",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.0",
+    "ncp": "^2.0.0",
+    "rimraf": "^5.0.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
