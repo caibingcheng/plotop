@@ -4,166 +4,85 @@
 <head>
     <meta charset="UTF-8">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/desktop-ui.css">
     <title>Plotop - Clients</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            background-color: #f8f9fa;
+            padding-top: var(--toolbar-height);
         }
 
         .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
+            padding: 16px 20px;
         }
 
-        header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        header h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 8px;
-        }
-
-        header p {
-            color: #888;
-            font-size: 14px;
-            margin: 0;
-        }
-
-        .ip-list {
+        .toolbar-title {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            line-height: 1.3;
         }
 
-        .ip-item {
-            display: flex;
-            align-items: center;
-            background-color: #fff;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 16px 20px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        .toolbar-title .subtitle {
+            font-size: 12px;
+            font-weight: normal;
+            color: var(--text-secondary);
         }
 
-        .ip-item:hover {
-            border-color: #4CAF50;
-            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.15);
-            transform: translateY(-1px);
+        .empty-hint {
+            text-align: center;
+            padding: 48px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-hint h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .empty-hint p {
+            margin: 6px 0;
+        }
+
+        .empty-hint code {
+            display: inline-block;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: var(--border-radius);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            color: var(--accent-color);
+            margin: 10px 0;
+            font-size: 13px;
         }
 
         .status-dot {
             width: 10px;
             height: 10px;
             border-radius: 50%;
-            margin-right: 12px;
             flex-shrink: 0;
         }
 
         .status-dot.online {
-            background-color: #4CAF50;
+            background-color: #2e7d32;
         }
 
         .status-dot.offline {
-            background-color: #bbb;
+            background-color: #9e9e9e;
         }
 
         .ip-text {
             flex: 1;
-            font-size: 16px;
-            color: #333;
+            font-size: 14px;
         }
 
         .ip-arrow {
-            color: #ccc;
-            font-size: 20px;
+            color: var(--text-secondary);
+            font-size: 18px;
             line-height: 1;
         }
-
-        .empty-hint {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
-        }
-
-        .empty-hint h3 {
-            color: #333;
-            margin-bottom: 12px;
-            font-size: 20px;
-        }
-
-        .empty-hint p {
-            margin: 8px 0;
-            color: #888;
-        }
-
-        .empty-hint code {
-            display: inline-block;
-            background-color: #f5f5f5;
-            padding: 10px 18px;
-            border-radius: 6px;
-            font-family: monospace;
-            color: #2e7d32;
-            margin: 12px 0;
-            font-size: 14px;
-        }
-
-        .tcp-port-config {
-            text-align: center;
-            margin-bottom: 20px;
-            padding: 12px 16px;
-            background-color: #fff;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 10px;
-            font-size: 14px;
-            color: #555;
-        }
-
-        .tcp-port-config label {
-            font-weight: bold;
-        }
-
-        .tcp-port-config input {
-            width: 70px;
-            padding: 6px 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-family: monospace;
-            text-align: center;
-        }
-
-        .tcp-port-config button {
-            padding: 6px 14px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .tcp-port-config button:hover {
-            background-color: #45a049;
-        }
-
-        .tcp-port-config .status {
-            font-size: 12px;
-            color: #888;
-        }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <script src="/vendor/socket.io.js"></script>
     <script type="text/javascript">
         document.addEventListener("DOMContentLoaded", function () {
             var params = new URLSearchParams(window.location.search);
@@ -185,7 +104,7 @@
 
             function createIpItem(ip, alive) {
                 var item = document.createElement("div");
-                item.className = "ip-item";
+                item.className = "app-list-item";
                 item.onclick = function () {
                     window.location.href = '/plot?ip=' + encodeURIComponent(ip);
                 };
@@ -208,7 +127,7 @@
             }
 
             function updateIpItem(ip, alive) {
-                var items = document.getElementsByClassName("ip-item");
+                var items = document.getElementsByClassName("app-list-item");
                 for (var i = 0; i < items.length; i++) {
                     var text = items[i].querySelector(".ip-text");
                     if (text && text.innerHTML === ip) {
@@ -274,24 +193,26 @@
 </head>
 
 <body>
-    <div class="container">
-        <header>
-            <h1>Plotop Clients</h1>
-            <p>已连接的客户端列表，点击 IP 查看实时性能数据</p>
-        </header>
-        <div class="tcp-port-config">
-            <label for="tcpPortInput">TCP 端口</label>
-            <input id="tcpPortInput" type="number" min="1" max="65535" value="28081" />
-            <button id="applyTcpPort">应用</button>
-            <span class="status" id="tcpPortStatus">当前 TCP 端口: 28081</span>
+    <div class="app-toolbar">
+        <div class="toolbar-title">
+            <span>Plotop Clients</span>
+            <span class="subtitle">已连接的客户端列表，点击 IP 查看实时性能数据</span>
         </div>
+        <div class="app-toolbar-group">
+            <label for="tcpPortInput">TCP 端口</label>
+            <input id="tcpPortInput" class="app-input" type="number" min="1" max="65535" value="28081" style="width: 70px;" />
+            <button id="applyTcpPort" class="app-button primary">应用</button>
+        </div>
+        <div class="app-status-bar" id="tcpPortStatus">当前 TCP 端口: 28081</div>
+    </div>
+    <div class="container">
         <div id="emptyHint" class="empty-hint">
             <h3>暂无客户端连接 / No clients connected</h3>
             <p>请先启动 plotop client，将性能数据发送到本服务端：</p>
             <code id="clientCommand">./plotop -i &lt;server_ip&gt; -p 28081 -d 1</code>
             <p class="hint-detail">更多用法请参考 README.md</p>
         </div>
-        <div id="ipList" class="ip-list"></div>
+        <div id="ipList" class="app-list"></div>
     </div>
 </body>
 

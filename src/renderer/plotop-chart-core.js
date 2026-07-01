@@ -133,7 +133,7 @@ function updateStatistics(chart, stats_container_id, flash = false) {
         });
 
         let stats_html = `
-            <table border="1" style="border-collapse: collapse; width: 100%; text-align: left;">
+            <table class="stats-table">
                 <thead>
                     <tr>
                         <th data-column="metric">Metric</th>
@@ -168,7 +168,9 @@ function updateStatistics(chart, stats_container_id, flash = false) {
                     title="点击隐藏/显示该线条">
                     <td>
                         <span class="color-dot" style="background-color: ${row.color};" title="点击选择颜色"></span>
-                        <span class="random-color-btn" title="随机颜色">🎲</span>
+                        <span class="random-color-btn" title="随机颜色">
+                            <svg viewBox="0 0 24 24"><path d="M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5 0 .55.45 1 1 1s1-.45 1-1c0-3.87-3.13-7-7-7zm-1 12c-2.76 0-5-2.24-5-5 0-.55-.45-1-1-1s-1 .45-1 1c0 3.87 3.13 7 7 7v3l4-4-4-4v3z"/></svg>
+                        </span>
                         ${row.metric}
                     </td>
                     <td>${row.avg}</td>
@@ -279,7 +281,7 @@ function addChart(name, y_axis_label, is_system_chart = false, chart_title = nul
     const random_id = Math.random().toString(36).substring(2, 15);
     ctx.id = name.replace(' ', '_') + random_id;
     ctx.style.width = '100%';
-    ctx.style.height = 'calc(100vh / 3)';
+    ctx.style.height = '240px';
 
     const stats_container = document.createElement('div');
     stats_container.id = `${ctx.id}_stats`;
@@ -402,24 +404,27 @@ function refreshJumpMenu() {
     wrappers.forEach(wrapper => {
         const title = wrapper.querySelector('.chart-title');
         if (title) {
-            html += `<div class="jump-menu-item" data-target="${wrapper.id}">${title.textContent}</div>`;
+            html += `<div class="app-list-item" data-target="${wrapper.id}">${title.textContent}</div>`;
         }
     });
     list.innerHTML = html;
 
-    const items = list.querySelectorAll('.jump-menu-item');
+    const items = list.querySelectorAll('.app-list-item');
     items.forEach(item => {
         item.addEventListener('click', function () {
             const targetId = this.getAttribute('data-target');
             const target = document.getElementById(targetId);
             if (target) {
-                // 留出顶部 config 栏的偏移，避免 title 被遮挡
-                const offset = 70;
+                // 留出顶部 toolbar 的偏移，避免 title 被遮挡
+                const offset = 60;
                 const top = target.getBoundingClientRect().top + window.pageYOffset - offset;
                 window.scrollTo({ top: top, behavior: 'smooth' });
             }
-            list.style.display = 'none';
-            document.getElementById('jumpMenu').classList.remove('expanded');
+            const menu = document.getElementById('jumpMenu');
+            if (menu) {
+                menu.classList.add('collapsed');
+                document.body.classList.remove('has-side-nav');
+            }
         });
     });
 
@@ -428,22 +433,19 @@ function refreshJumpMenu() {
         const menu = document.getElementById('jumpMenu');
         toggle.addEventListener('click', function (event) {
             event.stopPropagation();
-            if (list.style.display === 'none' || !list.style.display) {
+            menu.classList.toggle('collapsed');
+            document.body.classList.toggle('has-side-nav', !menu.classList.contains('collapsed'));
+            if (!menu.classList.contains('collapsed')) {
                 refreshJumpMenu();
-                list.style.display = 'block';
-                menu.classList.add('expanded');
-            } else {
-                list.style.display = 'none';
-                menu.classList.remove('expanded');
             }
         });
 
         // 点击菜单外部区域折叠菜单
         document.addEventListener('click', function (event) {
-            if (menu.contains(event.target)) return;
-            if (list.style.display === 'block') {
-                list.style.display = 'none';
-                menu.classList.remove('expanded');
+            if (menu.contains(event.target) || toggle.contains(event.target)) return;
+            if (!menu.classList.contains('collapsed')) {
+                menu.classList.add('collapsed');
+                document.body.classList.remove('has-side-nav');
             }
         });
 

@@ -10,49 +10,116 @@ if (showVersion) {
   process.exit(0);
 }
 
+async function createMainWindow(serverPort: number) {
+  const { app, BrowserWindow, nativeImage, Menu } = await import('electron');
+  const path = await import('path');
+  const fs = await import('fs');
+
+  let iconPath: string | undefined;
+  const candidates = [
+    path.resolve(__dirname, '..', 'assets', 'icon.png'),
+    path.resolve(__dirname, '..', '..', 'assets', 'icon.png'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      iconPath = candidate;
+      break;
+    }
+  }
+
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 960,
+    minHeight: 600,
+    title: 'Plotop',
+    backgroundColor: '#f0f0f0',
+    icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  win.on('page-title-updated', (event) => {
+    event.preventDefault();
+    win.setTitle('Plotop');
+  });
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Home',
+          click: () => {
+            win.webContents.executeJavaScript("window.location.href = '/'").catch(() => {
+              // Ignore if navigation fails.
+            });
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Export PNG',
+          click: () => {
+            win.webContents.executeJavaScript('exportPageAsPNG()').catch(() => {
+              // Ignore if the current page does not expose exportPageAsPNG.
+            });
+          },
+        },
+        {
+          label: 'Export Offline HTML',
+          click: () => {
+            win.webContents.executeJavaScript('exportOfflineHtml()').catch(() => {
+              // Ignore if the current page does not expose exportOfflineHtml.
+            });
+          },
+        },
+        { type: 'separator' },
+        { role: 'quit', label: 'Quit' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload', label: 'Reload' },
+        { role: 'toggleDevTools', label: 'Toggle DevTools' },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About',
+          click: () => {
+            const pkg = require('../package.json');
+            win.webContents.executeJavaScript(`alert('plotop ${pkg.version}')`).catch(() => {
+              // Ignore errors on pages that block alerts.
+            });
+          },
+        },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+
+  await win.loadURL(`http://127.0.0.1:${serverPort}`);
+  return win;
+}
+
 async function main() {
   const serverInfo = await startServer({ web: isWeb });
   console.log(`Web server available at http://${serverInfo.host}:${serverInfo.port}`);
   console.log(`TCP collector available at ${serverInfo.host}:${serverInfo.tcpPort}`);
 
   if (!isWeb) {
-    const { app, BrowserWindow, nativeImage } = await import('electron');
-    const path = await import('path');
-    const fs = await import('fs');
+    const { app, BrowserWindow } = await import('electron');
 
     app.setName('Plotop');
 
-    let iconPath: string | undefined;
-    const candidates = [
-      path.resolve(__dirname, '..', 'assets', 'icon.png'),
-      path.resolve(__dirname, '..', '..', 'assets', 'icon.png'),
-    ];
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        iconPath = candidate;
-        break;
-      }
-    }
-
     await app.whenReady();
-
-    const win = new BrowserWindow({
-      width: 1280,
-      height: 800,
-      title: 'Plotop',
-      icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-      },
-    });
-
-    win.on('page-title-updated', (event) => {
-      event.preventDefault();
-      win.setTitle('Plotop');
-    });
-
-    win.loadURL(`http://127.0.0.1:${serverInfo.port}`);
+    await createMainWindow(serverInfo.port);
 
     app.on('window-all-closed', () => {
       if (process.platform !== 'darwin') {
@@ -62,23 +129,7 @@ async function main() {
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        const newWin = new BrowserWindow({
-          width: 1280,
-          height: 800,
-          title: 'Plotop',
-          icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-          },
-        });
-
-        newWin.on('page-title-updated', (event) => {
-          event.preventDefault();
-          newWin.setTitle('Plotop');
-        });
-
-        await newWin.loadURL(`http://127.0.0.1:${serverInfo.port}`);
+        await createMainWindow(serverInfo.port);
       }
     });
   }
