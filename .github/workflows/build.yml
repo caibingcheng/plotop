@@ -61,19 +61,6 @@ jobs:
         fetch-depth: 0
         ref: ${{ github.ref }}
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-
-    - name: Install plotop
-      run: |
-        pip install .
-
-    - name: Verify Python package version
-      run: |
-        plotop --version
-
     - name: Download Artifact
       uses: actions/download-artifact@v4
 
