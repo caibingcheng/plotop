@@ -3,143 +3,48 @@
 
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <title>Plot Data</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/desktop-ui.css">
+    <title>Plotop - Plot Data</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
+            margin: 0;
+            padding-top: var(--toolbar-height);
+            padding-left: 0;
+            transition: padding-left 0.2s ease;
+        }
+
+        body.has-side-nav {
+            padding-left: 180px;
         }
 
         canvas {
-            border: 1px solid #ccc;
             width: 100%;
-            /* 设置满宽 */
-            height: calc(100vh / 3);
-            /* 设置高度为屏幕高度的1/3 */
+            display: block;
         }
 
-        table {
-            margin-bottom: 3rem;
+        .process-section {
+            margin-bottom: 10px;
         }
 
-        #config {
-            position: fixed;
-            top: 0px;
-            width: 100%;
-            background-color: #f8f8f8;
-            padding: 5px;
+        .process-section h4 {
+            margin: 0 0 6px 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 600;
         }
 
-        #filterButton {
-            margin-left: 10px;
+        .stale-process {
+            color: var(--danger-color);
+            font-style: italic;
         }
 
-        #filter-panel {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        #filter-panel.visible {
-            display: flex;
-        }
-
-        #filter-panel .modal-container {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            width: 90%;
-            max-width: 500px;
-            max-height: 80vh;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            display: flex;
-            flex-direction: column;
-        }
-
-        #filter-panel h3 {
-            margin-top: 0;
-        }
-
-        #processList {
-            list-style: none;
-            padding: 0;
-            max-height: 50vh;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            background-color: #fff;
-            margin: 10px 0;
-        }
-
-        #processList li {
-            padding: 4px 8px;
-            border-bottom: 1px solid #eee;
-        }
-
-        #processList li:last-child {
-            border-bottom: none;
-        }
-
-        #processList input[type="checkbox"] {
-            margin-right: 8px;
-        }
-
-        #filterStatus {
-            margin-top: 10px;
-            padding: 8px;
-            border-radius: 4px;
-            background-color: #e8f5e9;
-            min-height: 1.5em;
+        .stale-process label span {
+            opacity: 0.85;
         }
 
         #content {
-            margin-top: 2rem;
-        }
-
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .modal-container {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            width: 90%;
-            max-width: 600px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .modal-container h3 {
-            margin-top: 0;
-        }
-
-        .modal-textarea {
-            width: 100%;
-            min-height: 200px;
-            font-family: monospace;
-            font-size: 14px;
-            padding: 10px;
-            box-sizing: border-box;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            resize: vertical;
+            padding: 16px 20px;
         }
 
         .modal-hints {
@@ -157,200 +62,17 @@
             border-radius: 3px;
             font-family: monospace;
         }
-
-        .modal-buttons {
-            margin-top: 15px;
-            text-align: right;
-        }
-
-        .modal-buttons button {
-            margin-left: 10px;
-        }
-
-        .updated-row {
-            animation: flash 0.5s ease-in-out;
-        }
-
-        @keyframes flash {
-            0% {
-                background-color: #efefef;
-            }
-
-            100% {
-                background-color: transparent;
-            }
-        }
-
-        .waiting-overlay {
-            display: flex;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.85);
-            z-index: 2000;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            opacity: 1;
-            transition: opacity 0.4s ease;
-        }
-
-        .waiting-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .waiting-dots {
-            position: relative;
-            width: 64px;
-            height: 64px;
-        }
-
-        .waiting-dots span {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 8px;
-            height: 8px;
-            margin-top: -4px;
-            margin-left: -4px;
-            border-radius: 50%;
-            background-color: #4CAF50;
-            transform: rotate(var(--angle)) translate(22px);
-            animation: waiting-pulse 2.4s ease-in-out infinite;
-            animation-delay: var(--delay);
-        }
-
-        .waiting-dots span:nth-child(1) { --angle: 0deg; --delay: 0s; }
-        .waiting-dots span:nth-child(2) { --angle: 45deg; --delay: -0.3s; }
-        .waiting-dots span:nth-child(3) { --angle: 90deg; --delay: -0.6s; }
-        .waiting-dots span:nth-child(4) { --angle: 135deg; --delay: -0.9s; }
-        .waiting-dots span:nth-child(5) { --angle: 180deg; --delay: -1.2s; }
-        .waiting-dots span:nth-child(6) { --angle: 225deg; --delay: -1.5s; }
-        .waiting-dots span:nth-child(7) { --angle: 270deg; --delay: -1.8s; }
-        .waiting-dots span:nth-child(8) { --angle: 315deg; --delay: -2.1s; }
-
-        @keyframes waiting-pulse {
-            0%, 100% {
-                opacity: 0.25;
-                transform: rotate(var(--angle)) translate(22px) scale(1);
-            }
-            50% {
-                opacity: 1;
-                transform: rotate(var(--angle)) translate(22px) scale(1.3);
-            }
-        }
-
-        .waiting-text {
-            margin-top: 18px;
-            font-size: 16px;
-            color: #555;
-            letter-spacing: 0.5px;
-        }
-
-        .color-dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-            vertical-align: middle;
-        }
-
-        #content table tbody tr {
-            cursor: pointer;
-        }
-
-        .metric-hidden {
-            opacity: 0.5;
-        }
-
-        .metric-hidden .color-dot {
-            background-color: #999 !important;
-        }
-
-        .chart-wrapper {
-            margin-bottom: 1rem;
-        }
-
-        .chart-title {
-            font-size: 16px;
-            font-weight: bold;
-            margin: 8px 0 4px 0;
-            color: #333;
-        }
-
-        .jump-menu {
-            position: fixed;
-            top: 50px;
-            right: 20px;
-            z-index: 100;
-            opacity: 0.6;
-            transition: opacity 0.2s ease;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-        }
-
-        .jump-menu:hover,
-        .jump-menu.expanded {
-            opacity: 1;
-        }
-
-        .jump-menu-toggle {
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 8px 14px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-
-        .jump-menu-list {
-            display: none;
-            background-color: white;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            margin-top: 4px;
-            max-height: 60vh;
-            overflow-y: auto;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-            min-width: 160px;
-        }
-
-        .jump-menu-item {
-            padding: 8px 12px;
-            cursor: pointer;
-            border-bottom: 1px solid #eee;
-            font-size: 13px;
-            color: #333;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .jump-menu-item:last-child {
-            border-bottom: none;
-        }
-
-        .jump-menu-item:hover {
-            background-color: #f0f0f0;
-        }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 确保 Chart.js 在前 -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script> <!-- 确保适配器在后 -->
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas"></script> <!-- 添加 html2canvas 库 -->
-    <script src="/static/plotop-chart-core.js"></script>
+    <script src="/vendor/socket.io.js"></script>
+    <script src="/vendor/chart.umd.js"></script>
+    <script src="/vendor/chartjs-adapter-date-fns.umd.js"></script>
+    <script src="/vendor/html2canvas.min.js"></script>
+    <script src="/plotop-chart-core.js"></script>
     <script type="text/javascript">
         var data_storage = {
             data: [],
             prev_raw: null,
-            duration: 60, // 60 seconds
+            duration: 60,
             add(data) {
                 if (this.prev_raw === null) {
                     this.prev_raw = data;
@@ -416,7 +138,6 @@
                 let summary_cpu_idle = (cpu_idle[0] - prev_cpu_idle[0]) / cpu_cost * 100;
 
                 let cpu_cores = [];
-                // index 0 mean total
                 for (let i = 1; i < cpu_user.length; i++) {
                     let core_cost = addByIndex(cpu_arr, i) - addByIndex(prev_cpu_arr, i);
                     cpu_cores.push({
@@ -465,7 +186,7 @@
                                 pid: pid,
                                 name: name,
                                 cpu_usage: summary_process_cpu_usage,
-                                memory: process.memory / 1024, // 转换为 MB
+                                memory: process.memory / 1024,
                                 threads: threads,
                             });
                             break;
@@ -474,10 +195,10 @@
                 }
 
                 let parse_data = {
-                    timestamp: new Date(data.timestamp), // 转换为 Date 对象, timestamp 是ms
-                    free_memory: data.free_memory / 1024, // 转换为 MB
-                    used_memory: (data.total_memory - data.free_memory) / 1024, // 转换为 MB
-                    total_memory: data.total_memory / 1024, // 转换为 MB
+                    timestamp: new Date(data.timestamp),
+                    free_memory: data.free_memory / 1024,
+                    used_memory: (data.total_memory - data.free_memory) / 1024,
+                    total_memory: data.total_memory / 1024,
                     cpu_usage: summary_cpu_usage,
                     cpu_idle: summary_cpu_idle,
                     cpu_cores: cpu_cores,
@@ -512,13 +233,12 @@
             filtered(now) {
                 const filtered_data = this.data.filter(item => (now - item.timestamp) / 1000 <= this.duration + 10);
 
-                // 多显示一个数据点
                 const extended_data = [...filtered_data];
                 if (filtered_data.length > 0) {
                     const first_data_point = filtered_data[0];
                     extended_data.unshift({
                         ...first_data_point,
-                        timestamp: first_data_point.timestamp - 1000 // 假设间隔为 1 秒
+                        timestamp: first_data_point.timestamp - 1000
                     });
                 }
                 return extended_data;
@@ -529,16 +249,102 @@
         var process_charts = {};
         var selectedPids = new Set();
         var selectedSystemMetrics = ["used_memory", "cpu_usage", "cpu_cores"];
+        var colorOverrides = {};
+        var currentIp = '';
+
+        function getColorStorageKey(ip) {
+            return 'plotop_colors_' + (ip || 'default');
+        }
+
+        function loadColorOverridesForIp(ip) {
+            try {
+                const raw = localStorage.getItem(getColorStorageKey(ip));
+                colorOverrides = raw ? JSON.parse(raw) : {};
+            } catch (e) {
+                colorOverrides = {};
+            }
+        }
+
+        function saveColorOverridesForIp() {
+            try {
+                localStorage.setItem(getColorStorageKey(currentIp), JSON.stringify(colorOverrides));
+            } catch (e) {
+                console.error('Failed to save color overrides:', e);
+            }
+        }
+
+        const DURATION_STORAGE_PREFIX = 'plotop_duration_';
+        function getDurationStorageKey(ip) {
+            return DURATION_STORAGE_PREFIX + (ip || 'default');
+        }
+
+        function restoreDurationForIp(ip) {
+            try {
+                const raw = localStorage.getItem(getDurationStorageKey(ip));
+                if (!raw) return;
+                const saved = JSON.parse(raw);
+                if (!saved || typeof saved.duration !== 'number' || saved.duration <= 0) return;
+
+                const durationSelect = document.getElementById("durationSelect");
+                const customWrapper = document.getElementById("customDurationWrapper");
+                const customDurationValue = document.getElementById("customDurationValue");
+                const customDurationUnit = document.getElementById("customDurationUnit");
+
+                if (saved.isCustom && saved.customValue != null) {
+                    durationSelect.value = "custom";
+                    customWrapper.style.display = "inline";
+                    customDurationValue.value = saved.customValue;
+                    customDurationUnit.value = saved.customUnit || "min";
+                } else {
+                    const option = durationSelect.querySelector(`option[value="${saved.duration}"]`);
+                    if (option) {
+                        durationSelect.value = String(saved.duration);
+                        customWrapper.style.display = "none";
+                    } else {
+                        durationSelect.value = "custom";
+                        customWrapper.style.display = "inline";
+                        const hours = saved.duration / 3600;
+                        if (hours >= 1 && Number.isInteger(hours)) {
+                            customDurationValue.value = hours;
+                            customDurationUnit.value = "hour";
+                        } else {
+                            customDurationValue.value = Math.round(saved.duration / 60);
+                            customDurationUnit.value = "min";
+                        }
+                    }
+                }
+                data_storage.setDuration(saved.duration);
+            } catch (e) {
+                console.error('Failed to restore duration:', e);
+            }
+        }
+
+        function saveDurationForIp(duration, isCustom) {
+            try {
+                const payload = { duration: duration, isCustom: isCustom };
+                if (isCustom) {
+                    payload.customValue = parseFloat(document.getElementById("customDurationValue").value) || null;
+                    payload.customUnit = document.getElementById("customDurationUnit").value;
+                }
+                localStorage.setItem(getDurationStorageKey(currentIp), JSON.stringify(payload));
+            } catch (e) {
+                console.error('Failed to save duration:', e);
+            }
+        }
 
         function exportPageAsPNG() {
             const configElement = document.getElementById('config');
-            configElement.style.display = 'none'; // 隐藏 config 部分
+            const ip = new URLSearchParams(window.location.search).get('ip') || '';
+            const ipSafe = ip.replace(/\./g, '_');
+            const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
+            const filename = `plotop_${ipSafe}_${timestamp}.png`;
+            configElement.style.display = 'none';
             html2canvas(document.body).then(canvas => {
                 const link = document.createElement('a');
-                link.download = 'exported_page.png';
+                link.download = filename;
                 link.href = canvas.toDataURL('image/png');
                 link.click();
-                configElement.style.display = ''; // 恢复 config 部分
+                configElement.style.display = '';
             });
         }
 
@@ -564,9 +370,12 @@
             const dataJson = JSON.stringify(exportData.data);
             const metricsJson = JSON.stringify(exportData.selectedSystemMetrics);
             const pidsJson = JSON.stringify(exportData.selectedPids);
+            const colorOverridesJson = JSON.stringify(exportData.colorOverrides || {});
             const duration = exportData.duration;
             const ip = exportData.ip;
             const timestamp = exportData.timestamp;
+
+            const snapshotStyles = '\nbody { padding: 16px 20px; }\n#config { margin-bottom: 16px; padding: 12px 16px; background: #fff; border: 1px solid #c8c8c8; border-radius: 4px; font-size: 13px; color: #666; }\n';
 
             const parts = [];
             parts.push('<!DOCTYPE html>');
@@ -574,7 +383,7 @@
             parts.push('<head>');
             parts.push('    <meta charset="UTF-8">');
             parts.push('    <title>Plotop Offline - ' + escapeHtml(ip) + '</title>');
-            parts.push('    <style>' + styles + '</style>');
+            parts.push('    <style>' + styles + snapshotStyles + '</style>');
             parts.push('    <script>' + chartJsSrc + '<\/script>');
             parts.push('</head>');
             parts.push('<body>');
@@ -582,10 +391,6 @@
             parts.push('        <span>Offline export for ' + escapeHtml(ip) + ' at ' + escapeHtml(timestamp) + '</span>');
             parts.push('    </div>');
             parts.push('    <div id="content"></div>');
-            parts.push('    <div id="jumpMenu" class="jump-menu">');
-            parts.push('        <button id="jumpMenuToggle" class="jump-menu-toggle">Charts</button>');
-            parts.push('        <div id="jumpMenuList" class="jump-menu-list"></div>');
-            parts.push('    </div>');
             parts.push('    <script>' + coreSrc + '<\/script>');
             parts.push('    <script>');
             parts.push('        var data_storage = {');
@@ -612,6 +417,7 @@
             parts.push('        var process_charts = {};');
             parts.push('        var selectedPids = new Set(' + pidsJson + ');');
             parts.push('        var selectedSystemMetrics = ' + metricsJson + ';');
+            parts.push('        var colorOverrides = ' + colorOverridesJson + ';');
             parts.push('        document.addEventListener("DOMContentLoaded", function() {');
             parts.push('            updateChart();');
             parts.push('            if (data_storage.data.length > 0) {');
@@ -631,7 +437,7 @@
         }
 
         function exportOfflineHtml() {
-            const ip = "{{ ip }}";
+            const ip = new URLSearchParams(window.location.search).get('ip') || '';
             const ipSafe = ip.replace(/\./g, '_');
             const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
             const filename = `plotop_${ipSafe}_${timestamp}.html`;
@@ -647,14 +453,17 @@
                 duration: data_storage.duration,
                 selectedSystemMetrics: Array.from(selectedSystemMetrics),
                 selectedPids: Array.from(selectedPids),
+                colorOverrides: { ...colorOverrides },
                 data: JSON.parse(JSON.stringify(data_storage.data))
             };
 
             Promise.all([
-                fetch('https://cdn.jsdelivr.net/npm/chart.js').then(r => r.text()),
-                fetch('/static/plotop-chart-core.js').then(r => r.text())
-            ]).then(([chartJsSrc, coreSrc]) => {
-                const styles = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
+                fetch('/vendor/chart.umd.js').then(r => r.text()),
+                fetch('/plotop-chart-core.js').then(r => r.text()),
+                fetch('/desktop-ui.css').then(r => r.text())
+            ]).then(([chartJsSrc, coreSrc, desktopCss]) => {
+                const inlineStyles = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
+                const styles = desktopCss + '\n' + inlineStyles;
                 const html = buildOfflineHtml(exportData, chartJsSrc, coreSrc, styles);
                 downloadFile(html, filename, 'text/html');
             }).catch(err => {
@@ -664,11 +473,19 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            var socket = io.connect('http://' + document.domain + ':' + location.port);
-            var ip = "{{ ip }}";
-            var first_data_received = false; // 标记是否收到第一个数据
-            var after_clear = false; // 标记是否在 clear 后收到数据
-            var is_paused = false; // 标记图表是否暂停
+            var socket = io.connect('/');
+            currentIp = new URLSearchParams(window.location.search).get('ip') || '';
+            loadColorOverridesForIp(currentIp);
+            restoreDurationForIp(currentIp);
+            var ip = currentIp;
+            var first_data_received = false;
+            var after_clear = false;
+            var is_paused = false;
+
+            if (!ip) {
+                alert('Missing IP parameter');
+                return;
+            }
 
             function hideWaitingOverlay() {
                 const overlay = document.getElementById('waitingOverlay');
@@ -710,7 +527,6 @@
                 let stat = JSON.parse(data.data);
                 data_storage.add(stat);
 
-                // 如果是第一次收到数据或 clear 后的第一次数据，自动点击 updateChart
                 if ((!first_data_received || after_clear) && (data_storage.length() > 0)) {
                     first_data_received = true;
                     after_clear = false;
@@ -726,7 +542,6 @@
                     }
                 }
 
-                // keep alive
                 subscribe();
             });
 
@@ -735,7 +550,6 @@
                 content.innerHTML = '';
                 data_storage.clear();
 
-                // 销毁所有系统图表实例并清空引用
                 for (const key in system_charts) {
                     const sc = system_charts[key];
                     if (sc && sc.chart) {
@@ -744,7 +558,6 @@
                 }
                 system_charts = {};
 
-                // 销毁所有进程图表实例并清空引用
                 for (const pid in process_charts) {
                     const pc = process_charts[pid];
                     if (pc) {
@@ -755,7 +568,6 @@
                 }
                 process_charts = {};
 
-                // 标记为 clear 后的状态
                 after_clear = true;
                 first_data_received = false;
                 showWaitingOverlay();
@@ -769,18 +581,17 @@
 
             function openMetricsModal() {
                 metricsModalInput.value = getMetricsValue().replace(/,/g, ',\n');
-                metricsModal.style.display = 'flex';
+                metricsModal.classList.add('visible');
                 metricsModalInput.focus();
             }
 
             function closeMetricsModal() {
-                metricsModal.style.display = 'none';
+                metricsModal.classList.remove('visible');
             }
 
             function applyMetricsModal() {
                 const value = metricsModalInput.value;
                 const metrics = value.split(/[\n,]+/).map(metric => metric.trim()).filter(metric => metric);
-                // Only allow modifying system metrics; pid= metrics come from the process filter dialog.
                 const allowedSystemMetrics = ["free_memory", "used_memory", "total_memory", "cpu_usage", "cpu_idle", "cpu_cores"];
                 const systemMetrics = metrics.filter(m => allowedSystemMetrics.includes(m));
                 selectedSystemMetrics.length = 0;
@@ -813,7 +624,7 @@
             });
 
             document.addEventListener("keydown", function (event) {
-                if (event.key === "Escape" && metricsModal.style.display === 'flex') {
+                if (event.key === "Escape" && metricsModal.classList.contains('visible')) {
                     closeMetricsModal();
                 }
             });
@@ -832,7 +643,6 @@
             function updateDurationForCharts(duration) {
                 data_storage.setDuration(duration);
 
-                // 更新系统图表范围和刻度
                 if (system_charts['system_memory']) {
                     system_charts['system_memory'].chart.options.scales.x = getCommonXAxisConfig(duration);
                 }
@@ -843,7 +653,6 @@
                     system_charts['system_cores'].chart.options.scales.x = getCommonXAxisConfig(duration);
                 }
 
-                // 更新进程图表范围和刻度
                 for (const pid in process_charts) {
                     const process_chart = process_charts[pid];
                     if (process_chart) {
@@ -879,6 +688,7 @@
                 const duration = getSelectedDuration();
                 if (duration !== null) {
                     updateDurationForCharts(duration);
+                    saveDurationForIp(duration, this.value === "custom");
                 }
             });
 
@@ -887,6 +697,7 @@
                     const duration = getSelectedDuration();
                     if (duration !== null) {
                         updateDurationForCharts(duration);
+                        saveDurationForIp(duration, true);
                     }
                 }
             });
@@ -896,61 +707,116 @@
                     const duration = getSelectedDuration();
                     if (duration !== null) {
                         updateDurationForCharts(duration);
+                        saveDurationForIp(duration, true);
                     }
                 }
             });
 
             let allProcesses = [];
             let currentSearchQuery = '';
+            let lastKnownProcessNames = {};
+            let lastFilterStatus = null;
 
             socket.on('process_list/' + ip, function (msg) {
                 allProcesses = msg.processes || [];
+                allProcesses.forEach(function (process) {
+                    lastKnownProcessNames[process.pid] = process.name;
+                });
                 applySearch();
             });
 
             function applySearch() {
-                const query = currentSearchQuery;
-                if (!query) {
-                    renderProcessList(allProcesses);
-                    return;
-                }
-                const filtered = allProcesses.filter(function (process) {
-                    return String(process.pid).includes(query) || (process.name && process.name.toLowerCase().includes(query));
-                });
-                renderProcessList(filtered);
+                renderProcessList();
             }
 
-            function renderProcessList(processes) {
-                const processList = document.getElementById('processList');
-                if (!processList) return;
+            function createProcessListItem(pid, name, checked, isStale) {
+                const li = document.createElement('li');
+                li.className = 'app-list-item';
+                if (isStale) {
+                    li.classList.add('stale-process');
+                }
+                const label = document.createElement('label');
+                label.style.pointerEvents = 'none';
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                label.style.flex = '1';
+                label.style.gap = '8px';
 
-                processList.innerHTML = '';
-                processes.forEach(function (process) {
-                    const li = document.createElement('li');
-                    li.style.cursor = 'pointer';
-                    const label = document.createElement('label');
-                    label.style.pointerEvents = 'none';
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.value = process.pid;
-                    checkbox.checked = selectedPids.has(process.pid);
-                    checkbox.style.pointerEvents = 'none';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = checked;
+                checkbox.style.pointerEvents = 'none';
 
-                    function toggle() {
-                        checkbox.checked = !checkbox.checked;
-                        if (checkbox.checked) {
-                            selectedPids.add(process.pid);
-                        } else {
-                            selectedPids.delete(process.pid);
+                label.appendChild(checkbox);
+
+                const textSpan = document.createElement('span');
+                if (isStale) {
+                    const knownName = name ? name : 'unknown';
+                    textSpan.textContent = pid + ': ' + knownName + ' (is changed now)';
+                } else {
+                    textSpan.textContent = pid + ': ' + name;
+                }
+                label.appendChild(textSpan);
+                li.appendChild(label);
+
+                li.addEventListener('click', function () {
+                    if (checkbox.checked) {
+                        selectedPids.delete(pid);
+                    } else {
+                        selectedPids.add(pid);
+                        if (!isStale && name) {
+                            lastKnownProcessNames[pid] = name;
                         }
                     }
-
-                    li.addEventListener('click', toggle);
-                    label.appendChild(checkbox);
-                    label.appendChild(document.createTextNode(process.pid + ': ' + process.name));
-                    li.appendChild(label);
-                    processList.appendChild(li);
+                    renderProcessList();
                 });
+
+                return li;
+            }
+
+            function renderProcessList() {
+                const selectedSection = document.getElementById('selectedProcessSection');
+                const availableSection = document.getElementById('availableProcessSection');
+                const selectedList = document.getElementById('selectedProcessList');
+                const availableList = document.getElementById('availableProcessList');
+                if (!selectedList || !availableList) return;
+
+                selectedList.innerHTML = '';
+                availableList.innerHTML = '';
+
+                const selectedPidsSorted = Array.from(selectedPids).sort(function (a, b) { return a - b; });
+                selectedPidsSorted.forEach(function (pid) {
+                    const process = allProcesses.find(function (p) { return p.pid === pid; });
+                    if (process) {
+                        selectedList.appendChild(createProcessListItem(process.pid, process.name, true, false));
+                    } else {
+                        selectedList.appendChild(createProcessListItem(pid, lastKnownProcessNames[pid], true, true));
+                    }
+                });
+
+                if (selectedSection) {
+                    selectedSection.style.display = selectedPids.size > 0 ? 'block' : 'none';
+                }
+
+                const query = currentSearchQuery;
+                let available = allProcesses.filter(function (process) {
+                    return !selectedPids.has(process.pid);
+                });
+                if (query) {
+                    available = available.filter(function (process) {
+                        return String(process.pid).includes(query) || (process.name && process.name.toLowerCase().includes(query));
+                    });
+                }
+                available.sort(function (a, b) { return a.pid - b.pid; });
+                available.forEach(function (process) {
+                    availableList.appendChild(createProcessListItem(process.pid, process.name, false, false));
+                });
+
+                if (availableSection) {
+                    availableSection.style.display = available.length > 0 ? 'block' : 'none';
+                }
+
+                updateFilterStatus();
             }
 
             const processSearchInput = document.getElementById('processSearchInput');
@@ -962,17 +828,46 @@
             }
 
             socket.on('filter_status/' + ip, function (msg) {
+                lastFilterStatus = msg;
+                updateFilterStatus();
+            });
+
+            function updateFilterStatus() {
                 const filterStatus = document.getElementById('filterStatus');
                 if (!filterStatus) return;
 
-                if (msg.matched_count > 0) {
-                    filterStatus.textContent = 'Filter applied: ' + msg.matched_count + ' of ' + msg.requested_count + ' selected processes currently running.';
-                } else {
-                    filterStatus.textContent = 'Filter applied, but none of the selected processes are currently running.';
+                const currentPidSet = new Set(allProcesses.map(function (process) { return process.pid; }));
+                let staleCount = 0;
+                selectedPids.forEach(function (pid) {
+                    if (!currentPidSet.has(pid)) {
+                        staleCount++;
+                    }
+                });
+
+                let text = '';
+                if (lastFilterStatus) {
+                    if (lastFilterStatus.matched_count > 0) {
+                        text = 'Filter applied: ' + lastFilterStatus.matched_count + ' of ' + lastFilterStatus.requested_count + ' selected processes currently running.';
+                    } else {
+                        text = 'Filter applied, but none of the selected processes are currently running.';
+                    }
+                } else if (selectedPids.size > 0) {
+                    text = selectedPids.size + ' process(es) selected.';
                 }
-            });
+
+                if (staleCount > 0) {
+                    text += (text ? ' ' : '') + staleCount + ' selected PID' + (staleCount > 1 ? 's are' : ' is') + ' changed now.';
+                }
+
+                if (!text) {
+                    text = 'No processes selected.';
+                }
+
+                filterStatus.textContent = text;
+            }
 
             const filterPanel = document.getElementById('filter-panel');
+            const filterPanelOverlay = document.getElementById('filter-panel-overlay');
             const filterButton = document.getElementById('filterButton');
             const cancelFilterBtn = document.getElementById('cancelFilterBtn');
             const applyFilterBtn = document.getElementById('applyFilterBtn');
@@ -981,11 +876,17 @@
                 if (filterPanel) {
                     filterPanel.classList.add('visible');
                 }
+                if (filterPanelOverlay) {
+                    filterPanelOverlay.classList.add('visible');
+                }
             }
 
             function closeFilterPanel() {
                 if (filterPanel) {
                     filterPanel.classList.remove('visible');
+                }
+                if (filterPanelOverlay) {
+                    filterPanelOverlay.classList.remove('visible');
                 }
             }
 
@@ -997,11 +898,9 @@
                 cancelFilterBtn.addEventListener('click', closeFilterPanel);
             }
 
-            if (filterPanel) {
-                filterPanel.addEventListener('click', function (event) {
-                    if (event.target === filterPanel) {
-                        closeFilterPanel();
-                    }
+            if (filterPanelOverlay) {
+                filterPanelOverlay.addEventListener('click', function () {
+                    closeFilterPanel();
                 });
             }
 
@@ -1019,93 +918,140 @@
                 this.textContent = is_paused ? "Resume Chart" : "Pause Chart";
             });
 
-            document.getElementById("exportPage").addEventListener("click", exportPageAsPNG);
-            document.getElementById("exportOfflineHtml").addEventListener("click", exportOfflineHtml);
-            document.getElementById("clearData").addEventListener("click", function () {
-                if (confirm("Clear all collected data for " + ip + " and re-collect?")) {
-                    socket.emit('clear_data', { ip: ip });
-                }
-            });
+            const goHomeBtn = document.getElementById("goHome");
+            if (goHomeBtn) {
+                goHomeBtn.addEventListener("click", function () {
+                    window.location.href = '/';
+                });
+            }
+
+            const exportPageBtn = document.getElementById("exportPage");
+            if (exportPageBtn) exportPageBtn.addEventListener("click", exportPageAsPNG);
+            const exportOfflineHtmlBtn = document.getElementById("exportOfflineHtml");
+            if (exportOfflineHtmlBtn) exportOfflineHtmlBtn.addEventListener("click", exportOfflineHtml);
+
+            const randomColorsBtn = document.getElementById("randomColorsBtn");
+            console.log('randomColorsBtn element:', randomColorsBtn);
+            if (randomColorsBtn) {
+                randomColorsBtn.addEventListener("click", function () {
+                    console.log('randomColorsBtn clicked');
+                    if (typeof randomizeAllColors === 'function') {
+                        randomizeAllColors();
+                    }
+                });
+            }
+
+            const clearDataBtn = document.getElementById("clearData");
+            console.log('clearDataBtn element:', clearDataBtn);
+            if (clearDataBtn) {
+                clearDataBtn.addEventListener("click", function () {
+                    console.log('clearDataBtn clicked');
+                    if (confirm("Clear all collected data for " + ip + " and re-collect?")) {
+                        socket.emit('clear_data', { ip: ip });
+                    }
+                });
+            }
         });
     </script>
 </head>
 
 <body>
-    <div id="config">
-        <label for="durationSelect">Select duration:</label>
-        <select id="durationSelect">
-            <option value="10">10s</option>
-            <option value="30">30s</option>
-            <option value="60" selected>1min</option>
-            <option value="180">3min</option>
-            <option value="300">5min</option>
-            <option value="1800">30min</option>
-            <option value="3600">1H</option>
-            <option value="7200">2H</option>
-            <option value="43200">12H</option>
-            <option value="86400">24H</option>
-            <option value="custom">Custom</option>
-        </select>
-        <span id="customDurationWrapper" style="display:none; margin-left:8px;">
-            <input type="number" id="customDurationValue" min="1" value="1" style="width:60px;">
-            <select id="customDurationUnit">
-                <option value="min">min</option>
-                <option value="hour">hour</option>
+    <div id="config" class="app-toolbar">
+        <div class="app-toolbar-group" style="margin-right: auto;">
+            <button id="jumpMenuToggle" class="app-button">Charts</button>
+        </div>
+        <div class="app-toolbar-group">
+            <label for="durationSelect">Duration:</label>
+            <select id="durationSelect" class="app-select">
+                <option value="10">10s</option>
+                <option value="30">30s</option>
+                <option value="60" selected>1min</option>
+                <option value="180">3min</option>
+                <option value="300">5min</option>
+                <option value="1800">30min</option>
+                <option value="3600">1H</option>
+                <option value="7200">2H</option>
+                <option value="43200">12H</option>
+                <option value="86400">24H</option>
+                <option value="custom">Custom</option>
             </select>
-        </span>
-        <button id="filterButton">Select Processes</button>
-        <button id="pauseChart">Pause Chart</button>
-        <button id="exportPage">Export as PNG</button>
-        <button id="exportOfflineHtml">Export Offline HTML</button>
-        <button id="clearData">Clear Data</button>
+            <span id="customDurationWrapper" style="display:none; margin-left:8px;">
+                <input type="number" id="customDurationValue" class="app-input" min="1" value="1" style="width:60px;">
+                <select id="customDurationUnit" class="app-select">
+                    <option value="min">min</option>
+                    <option value="hour">hour</option>
+                </select>
+            </span>
+        </div>
+        <div class="app-toolbar-group">
+            <button id="randomColorsBtn" class="app-button">Random Colors</button>
+            <button id="pauseChart" class="app-button">Pause Chart</button>
+            <button id="clearData" class="app-button">Clear Data</button>
+        </div>
+        <div class="app-toolbar-group">
+            <button id="filterButton" class="app-button primary">Select Processes</button>
+        </div>
     </div>
 
-    <div id="filter-panel">
-        <div class="modal-container">
+    <div id="filter-panel-overlay" class="app-drawer-overlay"></div>
+    <div id="filter-panel" class="app-drawer">
+        <div class="app-drawer-header">
             <h3>Select Processes</h3>
-            <input type="text" id="processSearchInput" placeholder="Search pid or name..."
-                style="width: 100%; padding: 6px; margin-bottom: 8px; box-sizing: border-box;">
-            <ul id="processList"></ul>
-            <div class="modal-buttons">
-                <button id="cancelFilterBtn">Cancel</button>
-                <button id="applyFilterBtn" style="background-color: #4CAF50; color: white;">Apply Filter</button>
+        </div>
+        <div class="app-drawer-top">
+            <input type="text" id="processSearchInput" class="app-input" placeholder="Search pid or name..."
+                style="width: 100%;">
+        </div>
+        <div class="app-drawer-body">
+            <div id="selectedProcessSection" class="process-section">
+                <h4>Selected</h4>
+                <ul id="selectedProcessList" class="process-list app-list"></ul>
             </div>
-            <div id="filterStatus"></div>
+            <div id="availableProcessSection" class="process-section">
+                <h4>Available</h4>
+                <ul id="availableProcessList" class="process-list app-list"></ul>
+            </div>
+        </div>
+        <div class="app-drawer-status">
+            <div id="filterStatus" class="app-status-bar"></div>
+        </div>
+        <div class="app-drawer-footer">
+            <button id="cancelFilterBtn" class="app-button">Cancel</button>
+            <button id="applyFilterBtn" class="app-button primary">Apply Filter</button>
         </div>
     </div>
 
     <div id="content"></div>
 
-    <div id="jumpMenu" class="jump-menu">
-        <button id="jumpMenuToggle" class="jump-menu-toggle">Charts</button>
-        <div id="jumpMenuList" class="jump-menu-list"></div>
+    <div id="jumpMenu" class="app-side-nav collapsed">
+        <div class="app-side-nav-header">Charts</div>
+        <div id="jumpMenuList" class="app-list"></div>
     </div>
 
     <div id="waitingOverlay" class="waiting-overlay">
-        <div class="waiting-dots">
-            <span></span><span></span><span></span><span></span>
-            <span></span><span></span><span></span><span></span>
-        </div>
+        <div class="waiting-spinner"></div>
         <div class="waiting-text">Waiting for the first data packet...</div>
     </div>
 
-    <div id="metricsModal" class="modal-overlay">
-        <div class="modal-container">
-            <h3>Enter Metrics</h3>
-            <textarea id="metricsModalInput" class="modal-textarea"
-                placeholder="Enter metrics separated by commas or new lines"></textarea>
-            <div class="modal-hints">
-                <strong>Examples:</strong><br>
-                System metrics:
-                <code>free_memory</code>, <code>used_memory</code>, <code>total_memory</code>,
-                <code>cpu_usage</code>, <code>cpu_idle</code>, <code>cpu_cores</code><br>
-                Process metrics:
-                <code>pid=&lt;pid&gt;</code>, <code>comm=&lt;process_name&gt;</code><br><br>
-                Multiple metrics can be separated by commas or new lines.
+    <div id="metricsModal" class="app-modal-overlay">
+        <div class="app-modal">
+            <div class="app-modal-header">
+                <h3>Enter Metrics</h3>
             </div>
-            <div class="modal-buttons">
-                <button id="metricsModalCancel">Cancel</button>
-                <button id="metricsModalOk" style="background-color: #4CAF50; color: white;">OK</button>
+            <div class="app-modal-body">
+                <textarea id="metricsModalInput" class="app-input app-textarea"
+                    placeholder="Enter metrics separated by commas or new lines"></textarea>
+                <div class="modal-hints">
+                    <strong>Examples:</strong><br>
+                    System metrics:
+                    <code>free_memory</code>, <code>used_memory</code>, <code>total_memory</code>,
+                    <code>cpu_usage</code>, <code>cpu_idle</code>, <code>cpu_cores</code><br><br>
+                    Multiple metrics can be separated by commas or new lines.
+                </div>
+            </div>
+            <div class="app-modal-footer">
+                <button id="metricsModalCancel" class="app-button">Cancel</button>
+                <button id="metricsModalOk" class="app-button primary">OK</button>
             </div>
         </div>
     </div>

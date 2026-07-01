@@ -1,0 +1,69 @@
+{
+  "name": "plotop",
+  "version": "0.2.3-dev.8+g8703b03fb",
+  "description": "Real-time performance plotting application",
+  "author": "caibingcheng <jack_cbc@163.com>",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "ts-node src/main.ts",
+    "build": "tsc && rimraf dist/renderer && ncp src/renderer dist/renderer && node scripts/copy-vendor.js",
+    "start": "electron dist/main.js",
+    "web": "electron dist/main.js --web",
+    "dist": "node scripts/sync-version.js && electron-builder"
+  },
+  "build": {
+    "appId": "com.caibingcheng.plotop",
+    "productName": "Plotop",
+    "executableName": "plotop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "icon": "assets/icon.png",
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Development",
+      "maintainer": "caibingcheng <jack_cbc@163.com>",
+      "desktop": {
+        "StartupWMClass": "Plotop"
+      }
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    }
+  },
+  "dependencies": {
+    "chart.js": "^4.4.3",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "express": "^4.19.2",
+    "html2canvas": "^1.4.1",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0",
+    "ncp": "^2.0.0",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
