@@ -133,7 +133,7 @@ function updateStatistics(chart, stats_container_id, flash = false) {
         });
 
         let stats_html = `
-            <table border="1" style="border-collapse: collapse; width: 100%; text-align: left;">
+            <table class="stats-table">
                 <thead>
                     <tr>
                         <th data-column="metric">Metric</th>
@@ -166,7 +166,13 @@ function updateStatistics(chart, stats_container_id, flash = false) {
                     data-max="${row.max}"
                     data-stdDev="${row.stdDev}"
                     title="点击隐藏/显示该线条">
-                    <td><span class="color-dot" style="background-color: ${row.color};"></span>${row.metric}</td>
+                    <td>
+                        <span class="color-dot" style="background-color: ${row.color};" title="点击选择颜色"></span>
+                        <span class="random-color-btn" title="随机颜色">
+                            <svg viewBox="0 0 24 24"><path d="M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5 0 .55.45 1 1 1s1-.45 1-1c0-3.87-3.13-7-7-7zm-1 12c-2.76 0-5-2.24-5-5 0-.55-.45-1-1-1s-1 .45-1 1c0 3.87 3.13 7 7 7v3l4-4-4-4v3z"/></svg>
+                        </span>
+                        ${row.metric}
+                    </td>
                     <td>${row.avg}</td>
                     <td>${row.min}</td>
                     <td>${row.max}</td>
@@ -196,6 +202,46 @@ function updateStatistics(chart, stats_container_id, flash = false) {
                 stats_container.dataset.sortColumn = sortColumn;
                 stats_container.dataset.sortOrder = sortOrder;
                 renderTable();
+            });
+        });
+
+        // 添加颜色点选事件，用于打开取色器
+        const dots = stats_container.querySelectorAll('.color-dot');
+        dots.forEach(dot => {
+            dot.addEventListener('click', function (event) {
+                event.stopPropagation();
+                const metric = this.closest('tr').getAttribute('data-metric');
+                const dataset = datasets.find(d => d.label === metric);
+                if (!dataset) return;
+
+                const input = document.createElement('input');
+                input.type = 'color';
+                input.value = colorToHex(dataset.borderColor);
+                input.style.position = 'fixed';
+                input.style.opacity = '0';
+                input.style.pointerEvents = 'none';
+                document.body.appendChild(input);
+
+                input.addEventListener('input', function () {
+                    applyColorOverride(metric, this.value);
+                });
+                input.addEventListener('change', function () {
+                    setColorOverride(metric, this.value);
+                    updateAllStatistics();
+                    if (typeof saveColorOverridesForIp === 'function') saveColorOverridesForIp();
+                    document.body.removeChild(input);
+                });
+                input.click();
+            });
+        });
+
+        // 添加单条随机颜色按钮事件
+        const randomBtns = stats_container.querySelectorAll('.random-color-btn');
+        randomBtns.forEach(btn => {
+            btn.addEventListener('click', function (event) {
+                event.stopPropagation();
+                const metric = this.closest('tr').getAttribute('data-metric');
+                randomizeColorForLabel(metric);
             });
         });
 
@@ -235,7 +281,7 @@ function addChart(name, y_axis_label, is_system_chart = false, chart_title = nul
     const random_id = Math.random().toString(36).substring(2, 15);
     ctx.id = name.replace(' ', '_') + random_id;
     ctx.style.width = '100%';
-    ctx.style.height = 'calc(100vh / 3)';
+    ctx.style.height = '240px';
 
     const stats_container = document.createElement('div');
     stats_container.id = `${ctx.id}_stats`;
@@ -358,24 +404,27 @@ function refreshJumpMenu() {
     wrappers.forEach(wrapper => {
         const title = wrapper.querySelector('.chart-title');
         if (title) {
-            html += `<div class="jump-menu-item" data-target="${wrapper.id}">${title.textContent}</div>`;
+            html += `<div class="app-list-item" data-target="${wrapper.id}">${title.textContent}</div>`;
         }
     });
     list.innerHTML = html;
 
-    const items = list.querySelectorAll('.jump-menu-item');
+    const items = list.querySelectorAll('.app-list-item');
     items.forEach(item => {
         item.addEventListener('click', function () {
             const targetId = this.getAttribute('data-target');
             const target = document.getElementById(targetId);
             if (target) {
-                // 留出顶部 config 栏的偏移，避免 title 被遮挡
-                const offset = 70;
+                // 留出顶部 toolbar 的偏移，避免 title 被遮挡
+                const offset = 60;
                 const top = target.getBoundingClientRect().top + window.pageYOffset - offset;
                 window.scrollTo({ top: top, behavior: 'smooth' });
             }
-            list.style.display = 'none';
-            document.getElementById('jumpMenu').classList.remove('expanded');
+            const menu = document.getElementById('jumpMenu');
+            if (menu) {
+                menu.classList.add('collapsed');
+                document.body.classList.remove('has-side-nav');
+            }
         });
     });
 
@@ -384,22 +433,19 @@ function refreshJumpMenu() {
         const menu = document.getElementById('jumpMenu');
         toggle.addEventListener('click', function (event) {
             event.stopPropagation();
-            if (list.style.display === 'none' || !list.style.display) {
+            menu.classList.toggle('collapsed');
+            document.body.classList.toggle('has-side-nav', !menu.classList.contains('collapsed'));
+            if (!menu.classList.contains('collapsed')) {
                 refreshJumpMenu();
-                list.style.display = 'block';
-                menu.classList.add('expanded');
-            } else {
-                list.style.display = 'none';
-                menu.classList.remove('expanded');
             }
         });
 
         // 点击菜单外部区域折叠菜单
         document.addEventListener('click', function (event) {
-            if (menu.contains(event.target)) return;
-            if (list.style.display === 'block') {
-                list.style.display = 'none';
-                menu.classList.remove('expanded');
+            if (menu.contains(event.target) || toggle.contains(event.target)) return;
+            if (!menu.classList.contains('collapsed')) {
+                menu.classList.add('collapsed');
+                document.body.classList.remove('has-side-nav');
             }
         });
 
@@ -721,6 +767,76 @@ function initProcessCharts(metrics) {
     }
 }
 
+function colorToHex(color) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    return ctx.fillStyle;
+}
+
+function setColorOverride(label, color) {
+    if (typeof colorOverrides === 'undefined') return;
+    colorOverrides[label] = color;
+    applyColorOverride(label, color);
+}
+
+function applyColorOverride(label, color) {
+    function updateChartDatasets(chart) {
+        if (!chart || !chart.data) return;
+        chart.data.datasets.forEach(dataset => {
+            if (dataset.label === label) {
+                dataset.borderColor = color;
+            }
+        });
+        chart.update('none');
+    }
+    updateChartDatasets(system_charts['system_memory']?.chart);
+    updateChartDatasets(system_charts['system_cpu']?.chart);
+    updateChartDatasets(system_charts['system_cores']?.chart);
+    for (const pid in process_charts) {
+        const pc = process_charts[pid];
+        if (pc) {
+            updateChartDatasets(pc.memory);
+            updateChartDatasets(pc.cpu);
+            updateChartDatasets(pc.thread_cpu);
+        }
+    }
+}
+
+function randomizeColorForLabel(label) {
+    const color = getRandomColor();
+    setColorOverride(label, color);
+    updateAllStatistics();
+    if (typeof saveColorOverridesForIp === 'function') saveColorOverridesForIp();
+    return color;
+}
+
+function randomizeAllColors() {
+    if (typeof colorOverrides === 'undefined') return;
+    const labels = new Set();
+    function collect(chart) {
+        if (!chart || !chart.data) return;
+        chart.data.datasets.forEach(dataset => labels.add(dataset.label));
+    }
+    collect(system_charts['system_memory']?.chart);
+    collect(system_charts['system_cpu']?.chart);
+    collect(system_charts['system_cores']?.chart);
+    for (const pid in process_charts) {
+        const pc = process_charts[pid];
+        if (pc) {
+            collect(pc.memory);
+            collect(pc.cpu);
+            collect(pc.thread_cpu);
+        }
+    }
+    labels.forEach(label => {
+        colorOverrides[label] = getRandomColor();
+        applyColorOverride(label, colorOverrides[label]);
+    });
+    updateAllStatistics();
+    if (typeof saveColorOverridesForIp === 'function') saveColorOverridesForIp();
+}
+
 // 随机颜色生成函数
 function getRandomColor() {
     const r = Math.floor(Math.random() * 255);
@@ -732,6 +848,9 @@ function getRandomColor() {
 // 根据 label 生成确定性颜色，保证同一 metric 刷新后颜色一致
 // 使用预定义调色板，避免相似 label 生成过于接近的颜色
 function getColorForLabel(label) {
+    if (typeof colorOverrides !== 'undefined' && colorOverrides && colorOverrides[label]) {
+        return colorOverrides[label];
+    }
     const palette = [
         '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
         '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',

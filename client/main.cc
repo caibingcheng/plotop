@@ -112,6 +112,17 @@ static void receiver_thread_(Network *network, Packet *packet, FilterConfig *fil
         const auto pids = extract_json_int_array_(message, "pids");
         filter_config->set(pids);
 
+        std::ostringstream pid_stream;
+        pid_stream << "[";
+        for (auto it = pids.begin(); it != pids.end(); ++it) {
+          if (it != pids.begin()) {
+            pid_stream << ", ";
+          }
+          pid_stream << *it;
+        }
+        pid_stream << "]";
+        Log::info("Received filter, pids: ", pid_stream.str());
+
         const auto current_processes = packet->get_process_list();
         int32_t matched_count = 0;
         for (const auto &process : current_processes) {
@@ -171,7 +182,7 @@ int32_t main(int32_t argc, char **argv) {
   Arguments args;
   Cmdline cmdline;
   cmdline.add_argument('i', "ip", args.address, "127.0.0.1", "Server IP address");
-  cmdline.add_argument('p', "port", args.port, 8001, "Server port");
+  cmdline.add_argument('p', "port", args.port, 28081, "Server TCP port");
   cmdline.add_argument('l', "level", args.level, 2, "Log level: 0=ERROR, 1=INFO, 2=DEBUG");
   cmdline.add_argument('d', "duration", args.duration, 3, "Sampling interval in seconds");
 
@@ -205,6 +216,14 @@ int32_t main(int32_t argc, char **argv) {
         Interval interval(args.duration, [&]() {
           if (stop_flag.load()) {
             throw std::runtime_error("Stopped");
+          }
+
+          try {
+            if (packet->process_list_changed()) {
+              send_process_list_(network.get(), packet.get());
+            }
+          } catch (const std::exception &e) {
+            Log::error("Failed to send process list: ", e.what());
           }
 
           Stats stats;
