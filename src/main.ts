@@ -15,15 +15,26 @@ async function createMainWindow(serverPort: number) {
   const path = await import('path');
   const fs = await import('fs');
 
-  let iconPath: string | undefined;
+  let icon: Electron.NativeImage | undefined;
+  const appPath = app.getAppPath();
   const candidates = [
+    path.resolve(appPath.replace(/app\.asar$/, 'app.asar.unpacked'), 'assets', 'icon.png'),
+    path.resolve(appPath, 'assets', 'icon.png'),
     path.resolve(__dirname, '..', 'assets', 'icon.png'),
     path.resolve(__dirname, '..', '..', 'assets', 'icon.png'),
   ];
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      iconPath = candidate;
-      break;
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    try {
+      const img = nativeImage.createFromPath(candidate);
+      if (!img.isEmpty()) {
+        icon = img;
+        break;
+      }
+    } catch {
+      // Ignore unloadable icons.
     }
   }
 
@@ -34,7 +45,7 @@ async function createMainWindow(serverPort: number) {
     minHeight: 600,
     title: 'Plotop',
     backgroundColor: '#f0f0f0',
-    icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
+    icon,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

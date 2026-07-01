@@ -24,6 +24,9 @@
       "assets/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "assets/**/*"
+    ],
     "icon": "assets/icon.png",
     "mac": {
       "target": "dmg",
