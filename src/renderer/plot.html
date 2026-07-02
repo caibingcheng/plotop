@@ -274,6 +274,7 @@
         }
 
         const DURATION_STORAGE_PREFIX = 'plotop_duration_';
+
         function getDurationStorageKey(ip) {
             return DURATION_STORAGE_PREFIX + (ip || 'default');
         }
@@ -481,10 +482,48 @@
             var first_data_received = false;
             var after_clear = false;
             var is_paused = false;
+            var lastRenderTime = 0;
+            var refreshTimer = null;
+            var lastDataArrivalTime = 0;
+            var estimatedDataInterval = 0;
 
             if (!ip) {
                 alert('Missing IP parameter');
                 return;
+            }
+
+            function scheduleRefresh() {
+                if (is_paused) return;
+                const now = Date.now();
+                const arrivalDelta = lastDataArrivalTime ? now - lastDataArrivalTime : 0;
+                lastDataArrivalTime = now;
+                if (arrivalDelta > 0) {
+                    estimatedDataInterval = estimatedDataInterval === 0
+                        ? arrivalDelta
+                        : Math.round(estimatedDataInterval * 0.7 + arrivalDelta * 0.3);
+                }
+
+                if (refreshTimer) {
+                    clearTimeout(refreshTimer);
+                    refreshTimer = null;
+                }
+
+                const sinceLastRender = now - lastRenderTime;
+                const adaptiveInterval = Math.max(3000, estimatedDataInterval);
+                if (sinceLastRender >= adaptiveInterval) {
+                    refreshChartsForCurrentDuration();
+                    lastRenderTime = now;
+                    return;
+                }
+
+                const delay = adaptiveInterval - sinceLastRender;
+                refreshTimer = setTimeout(function () {
+                    if (!is_paused) {
+                        refreshChartsForCurrentDuration();
+                    }
+                    lastRenderTime = Date.now();
+                    refreshTimer = null;
+                }, delay);
             }
 
             function hideWaitingOverlay() {
@@ -538,7 +577,7 @@
                     if (needsProcessChartUpdate()) {
                         updateChart();
                     } else {
-                        refreshChartsForCurrentDuration();
+                        scheduleRefresh();
                     }
                 }
 
@@ -916,6 +955,15 @@
             document.getElementById("pauseChart").addEventListener("click", function () {
                 is_paused = !is_paused;
                 this.textContent = is_paused ? "Resume Chart" : "Pause Chart";
+                if (is_paused) {
+                    if (refreshTimer) {
+                        clearTimeout(refreshTimer);
+                        refreshTimer = null;
+                    }
+                } else {
+                    lastRenderTime = 0;
+                    scheduleRefresh();
+                }
             });
 
             const goHomeBtn = document.getElementById("goHome");
