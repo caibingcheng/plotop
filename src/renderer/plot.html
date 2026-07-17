@@ -136,6 +136,11 @@
 
                 let summary_cpu_usage = (cpu_cost - (cpu_idle[0] - prev_cpu_idle[0])) / cpu_cost * 100;
                 let summary_cpu_idle = (cpu_idle[0] - prev_cpu_idle[0]) / cpu_cost * 100;
+                let summary_cpu_user = (cpu_user[0] - prev_cpu_user[0]) / cpu_cost * 100;
+                let summary_cpu_system = (cpu_system[0] - prev_cpu_system[0]) / cpu_cost * 100;
+                let summary_cpu_iowait = (cpu_iowait[0] - prev_cpu_iowait[0]) / cpu_cost * 100;
+                let summary_cpu_irq = (cpu_irq[0] - prev_cpu_irq[0]) / cpu_cost * 100;
+                let summary_cpu_softirq = (cpu_softirq[0] - prev_cpu_softirq[0]) / cpu_cost * 100;
 
                 let cpu_cores = [];
                 for (let i = 1; i < cpu_user.length; i++) {
@@ -144,6 +149,8 @@
                         core: i,
                         cpu_usage: (core_cost - (cpu_idle[i] - prev_cpu_idle[i])) / core_cost * 100,
                         cpu_idle: (cpu_idle[i] - prev_cpu_idle[i]) / core_cost * 100,
+                        cpu_user: (cpu_user[i] - prev_cpu_user[i]) / core_cost * 100,
+                        cpu_system: (cpu_system[i] - prev_cpu_system[i]) / core_cost * 100,
                     });
                 }
 
@@ -160,6 +167,10 @@
                             let prev_process_cpu_total = prev_process.cpu_user + prev_process.cpu_system;
                             let process_cpu_cost = process_cpu_total - prev_process_cpu_total;
                             let summary_process_cpu_usage = process_cpu_cost / cpu_cost * 100;
+                            let process_cpu_user_cost = process.cpu_user - prev_process.cpu_user;
+                            let process_cpu_system_cost = process.cpu_system - prev_process.cpu_system;
+                            let summary_process_cpu_user = process_cpu_user_cost / cpu_cost * 100;
+                            let summary_process_cpu_system = process_cpu_system_cost / cpu_cost * 100;
 
                             let threads = [];
                             for (let k = 0; k < process.threads.length; k++) {
@@ -171,11 +182,17 @@
                                         let prev_thread_cpu_total = prev_process.threads[l].cpu_user + prev_process.threads[l].cpu_system;
                                         let thread_cpu_cost = thread_cpu_total - prev_thread_cpu_total;
                                         let summary_thread_cpu_usage = thread_cpu_cost / cpu_cost * 100 * cpu_cores.length;
+                                        let thread_cpu_user_cost = thread.cpu_user - prev_process.threads[l].cpu_user;
+                                        let thread_cpu_system_cost = thread.cpu_system - prev_process.threads[l].cpu_system;
+                                        let summary_thread_cpu_user = thread_cpu_user_cost / cpu_cost * 100 * cpu_cores.length;
+                                        let summary_thread_cpu_system = thread_cpu_system_cost / cpu_cost * 100 * cpu_cores.length;
 
                                         threads.push({
                                             tid: thread_tid,
                                             priority: thread.priority,
                                             cpu_usage: summary_thread_cpu_usage,
+                                            cpu_user: summary_thread_cpu_user,
+                                            cpu_system: summary_thread_cpu_system,
                                         });
                                         break;
                                     }
@@ -186,6 +203,8 @@
                                 pid: pid,
                                 name: name,
                                 cpu_usage: summary_process_cpu_usage,
+                                cpu_user: summary_process_cpu_user,
+                                cpu_system: summary_process_cpu_system,
                                 memory: process.memory / 1024,
                                 threads: threads,
                             });
@@ -201,6 +220,11 @@
                     total_memory: data.total_memory / 1024,
                     cpu_usage: summary_cpu_usage,
                     cpu_idle: summary_cpu_idle,
+                    cpu_user: summary_cpu_user,
+                    cpu_system: summary_cpu_system,
+                    cpu_iowait: summary_cpu_iowait,
+                    cpu_irq: summary_cpu_irq,
+                    cpu_softirq: summary_cpu_softirq,
                     cpu_cores: cpu_cores,
                     processes: processes,
                 };

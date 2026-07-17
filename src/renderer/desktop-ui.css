@@ -486,6 +486,31 @@ body {
   background-color: #999999 !important;
 }
 
+.stats-table tbody tr.stats-row-group .metric-name {
+  font-weight: 600;
+}
+
+.stats-table tbody tr.stats-row-child .metric-name {
+  padding-left: 1.2rem;
+}
+
+.stats-row-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  color: #666;
+  user-select: none;
+}
+
+.stats-row-expand-btn:hover {
+  color: #000;
+}
+
 @keyframes flash {
   0% {
     background-color: #e3f2fd;

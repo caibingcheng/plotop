@@ -3,6 +3,8 @@
 // This file contains the core chart logic used by both the live plot page
 // and exported offline HTML snapshots.
 
+const expandedGroups = {};
+
 function getStepSize(duration) {
     if (duration <= 10) return 1; // 10s -> 1s
     if (duration <= 30) return 5; // 30s -> 5s
@@ -65,7 +67,8 @@ function getCommonChartConfig(title, duration) {
                     title: {
                         display: true,
                         text: title
-                    }
+                    },
+                    beginAtZero: false
                 }
             }
         }
@@ -102,14 +105,16 @@ function updateStatistics(chart, stats_container_id, flash = false) {
             max: stats.max.toFixed(2),
             stdDev: stats.stdDev.toFixed(2),
             color: dataset.borderColor,
-            hidden: !!dataset.hidden
+            hidden: !!dataset.hidden,
+            isGroup: !!dataset.isGroup,
+            parentLabel: dataset.parentLabel || null
         };
     });
 
     let sortColumn = stats_container.dataset.sortColumn || 'metric';
     let sortOrder = stats_container.dataset.sortOrder || 'asc';
 
-    function sortFn(a, b) {
+    function compareByColumn(a, b) {
         const a_list = String(a[sortColumn]).split(' ');
         const b_list = String(b[sortColumn]).split(' ');
         const a_values = a_list.map(item => isNaN(parseFloat(item)) ? item : parseFloat(item));
@@ -130,7 +135,36 @@ function updateStatistics(chart, stats_container_id, flash = false) {
         }
     }
 
-    const sortedData = [...stats_data].sort(sortFn);
+    // Build hierarchical groups: parent/standalone + children, sort groups as a whole
+    const groups = [];
+    const parentMap = new Map();
+    stats_data.forEach(row => {
+        if (row.isGroup) {
+            const group = { parent: row, children: [] };
+            parentMap.set(row.metric, group);
+            groups.push(group);
+        } else if (row.parentLabel) {
+            const group = parentMap.get(row.parentLabel);
+            if (group) {
+                group.children.push(row);
+            } else {
+                groups.push({ parent: row, children: [] });
+            }
+        } else {
+            groups.push({ parent: row, children: [] });
+        }
+    });
+
+    groups.sort((a, b) => compareByColumn(a.parent, b.parent));
+    groups.forEach(group => {
+        group.children.sort((a, b) => compareByColumn(a, b));
+    });
+
+    const sortedData = [];
+    groups.forEach(group => {
+        sortedData.push(group.parent);
+        group.children.forEach(child => sortedData.push(child));
+    });
 
     let table = stats_container.querySelector('table.stats-table');
     if (!table) {
@@ -174,6 +208,13 @@ function updateStatistics(chart, stats_container_id, flash = false) {
             const dataset = datasets.find(d => d.label === metric);
             if (!dataset) return;
 
+            if (event.target.classList.contains('stats-row-expand-btn')) {
+                event.stopPropagation();
+                expandedGroups[`${stats_container_id}:${metric}`] = !expandedGroups[`${stats_container_id}:${metric}`];
+                updateStatistics(chart, stats_container_id, false);
+                return;
+            }
+
             if (event.target.classList.contains('color-dot')) {
                 event.stopPropagation();
                 const input = document.createElement('input');
@@ -198,7 +239,29 @@ function updateStatistics(chart, stats_container_id, flash = false) {
                 event.stopPropagation();
                 randomizeColorForLabel(metric);
             } else {
-                dataset.hidden = !dataset.hidden;
+                if (dataset.isGroup) {
+                    const newHidden = !dataset.hidden;
+                    dataset.hidden = newHidden;
+                    if (newHidden) {
+                        dataset._childHiddenStates = {};
+                        datasets.forEach(d => {
+                            if (d.parentLabel === metric) {
+                                dataset._childHiddenStates[d.label] = d.hidden;
+                                d.hidden = true;
+                            }
+                        });
+                    } else {
+                        datasets.forEach(d => {
+                            if (d.parentLabel === metric) {
+                                if (dataset._childHiddenStates && d.label in dataset._childHiddenStates) {
+                                    d.hidden = dataset._childHiddenStates[d.label];
+                                }
+                            }
+                        });
+                    }
+                } else {
+                    dataset.hidden = !dataset.hidden;
+                }
                 chart.update();
                 updateStatistics(chart, stats_container_id, false);
             }
@@ -213,12 +276,23 @@ function updateStatistics(chart, stats_container_id, flash = false) {
     sortedData.forEach(row => {
         let tr = rowMap.get(row.metric);
         const isNew = !tr;
+        const isChild = !!row.parentLabel;
+        const isGroup = row.isGroup;
+
         if (isNew) {
             tr = document.createElement('tr');
             tr.setAttribute('data-metric', row.metric);
             tr.setAttribute('title', '点击隐藏/显示该线条');
 
             const nameTd = document.createElement('td');
+
+            if (isGroup) {
+                const expandBtn = document.createElement('span');
+                expandBtn.className = 'stats-row-expand-btn';
+                expandBtn.title = '展开/折叠子项';
+                nameTd.appendChild(expandBtn);
+            }
+
             const colorDot = document.createElement('span');
             colorDot.className = 'color-dot';
             colorDot.title = '点击选择颜色';
@@ -243,6 +317,20 @@ function updateStatistics(chart, stats_container_id, flash = false) {
             });
         }
 
+        if (isGroup) {
+            const expanded = !!expandedGroups[`${stats_container_id}:${row.metric}`];
+            tr.classList.toggle('expanded', expanded);
+            const expandBtn = tr.querySelector('.stats-row-expand-btn');
+            if (expandBtn) expandBtn.textContent = expanded ? '▼' : '▶';
+        }
+
+        if (isChild) {
+            const expanded = !!expandedGroups[`${stats_container_id}:${row.parentLabel}`];
+            tr.style.display = expanded ? '' : 'none';
+        } else {
+            tr.style.display = '';
+        }
+
         const oldAvg = tr.getAttribute('data-avg');
         const oldMin = tr.getAttribute('data-min');
         const oldMax = tr.getAttribute('data-max');
@@ -258,7 +346,7 @@ function updateStatistics(chart, stats_container_id, flash = false) {
         tr.setAttribute('data-max', row.max);
         tr.setAttribute('data-stdDev', row.stdDev);
 
-        tr.className = `${row.hidden ? 'metric-hidden' : ''} ${isUpdated ? 'updated-row' : ''}`.trim();
+        tr.className = `${row.hidden ? 'metric-hidden' : ''} ${isUpdated ? 'updated-row' : ''} ${isGroup ? 'stats-row-group' : ''} ${isChild ? 'stats-row-child' : ''}`.trim();
 
         const colorDot = tr.querySelector('.color-dot');
         if (colorDot) colorDot.style.backgroundColor = row.color;
@@ -375,10 +463,12 @@ function updateAllCharts(extended_data, x_axis_labels) {
     if (system_charts['system_cores']) {
         const system_cores = system_charts['system_cores'].chart;
         system_cores.data.datasets.forEach(dataset => {
-            const core_index = parseInt(dataset.label.split(' ')[1], 10);
+            const parts = dataset.label.split(' ');
+            const core_index = parseInt(parts[1], 10);
+            const metric = parts.length > 2 ? 'cpu_' + parts[2].toLowerCase() : 'cpu_usage';
             dataset.data = extended_data.map(item => {
                 const core_data = item.cpu_cores.find(core => core.core === core_index);
-                return core_data ? core_data.cpu_usage : null;
+                return core_data ? core_data[metric] : null;
             });
         });
         system_cores.data.labels = x_axis_labels;
@@ -396,9 +486,12 @@ function updateAllCharts(extended_data, x_axis_labels) {
             const process = item.processes.find(p => p.pid === pidNum);
             return process ? process.memory : null;
         });
-        updateChartData(process_chart.cpu, extended_data, x_axis_labels, (datasets, item) => {
+        updateChartData(process_chart.cpu, extended_data, x_axis_labels, (dataset, item) => {
             const process = item.processes.find(p => p.pid === pidNum);
-            return process ? process.cpu_usage : null;
+            if (!process) return null;
+            const metricMap = { 'CPU Total': 'cpu_usage', 'CPU User': 'cpu_user', 'CPU System': 'cpu_system' };
+            const field = metricMap[dataset.label];
+            return field !== undefined ? process[field] : null;
         });
         const live_process_for_threads = latest_data ? latest_data.processes.find(p => p.pid === pidNum) : null;
         if (live_process_for_threads) {
@@ -418,17 +511,42 @@ function updateAllCharts(extended_data, x_axis_labels) {
                         borderColor: getColorForLabel(thread_label),
                         backgroundColor: 'rgba(0, 0, 0, 0)',
                         borderWidth: 1,
-                        fill: false
+                        fill: false,
+                        isGroup: true
+                    });
+                    ['User', 'System'].forEach(childSuffix => {
+                        const childLabel = `${thread_label} ${childSuffix}`;
+                        const field = childSuffix === 'User' ? 'cpu_user' : 'cpu_system';
+                        process_chart.thread_cpu.data.datasets.push({
+                            label: childLabel,
+                            data: extended_data.map(item => {
+                                const proc = item.processes.find(p => p.pid === pidNum);
+                                if (proc) {
+                                    const thread_data = proc.threads.find(t => t.tid === thread.tid);
+                                    return thread_data ? thread_data[field] : null;
+                                }
+                                return null;
+                            }),
+                            borderColor: getColorForLabel(childLabel),
+                            backgroundColor: 'rgba(0, 0, 0, 0)',
+                            borderWidth: 1,
+                            fill: false,
+                            parentLabel: thread_label,
+                            hidden: true
+                        });
                     });
                 }
             });
         }
 
-        updateChartData(process_chart.thread_cpu, extended_data, x_axis_labels, (datasets, item) => {
-            const thread = datasets.label.split(' ')[1];
+        updateChartData(process_chart.thread_cpu, extended_data, x_axis_labels, (dataset, item) => {
+            const parts = dataset.label.split(' ');
+            const tid = parts[1];
+            const suffix = parts[2];
+            const field = suffix ? (suffix === 'User' ? 'cpu_user' : 'cpu_system') : 'cpu_usage';
             const process = item.processes.find(p => p.pid === pidNum);
-            const thread_data = process ? process.threads.find(t => t.tid === thread) : null;
-            return thread_data ? thread_data.cpu_usage : null;
+            const thread_data = process ? process.threads.find(t => String(t.tid) === tid) : null;
+            return thread_data ? thread_data[field] : null;
         });
 
         const live_process = latest_data ? latest_data.processes.find(p => p.pid === pidNum) : null;
@@ -512,9 +630,11 @@ function appendAllChartsData(newItem) {
 
     if (system_charts['system_cores']) {
         appendChartData(system_charts['system_cores'].chart, newItem, (dataset, item) => {
-            const core_index = parseInt(dataset.label.split(' ')[1], 10);
+            const parts = dataset.label.split(' ');
+            const core_index = parseInt(parts[1], 10);
+            const metric = parts.length > 2 ? 'cpu_' + parts[2].toLowerCase() : 'cpu_usage';
             const core_data = item.cpu_cores.find(core => core.core === core_index);
-            return core_data ? core_data.cpu_usage : null;
+            return core_data ? core_data[metric] : null;
         });
     }
 
@@ -530,7 +650,10 @@ function appendAllChartsData(newItem) {
 
         appendChartData(process_chart.cpu, newItem, (dataset, item) => {
             const process = item.processes.find(p => p.pid === pidNum);
-            return process ? process.cpu_usage : null;
+            if (!process) return null;
+            const metricMap = { 'CPU Total': 'cpu_usage', 'CPU User': 'cpu_user', 'CPU System': 'cpu_system' };
+            const field = metricMap[dataset.label];
+            return field !== undefined ? process[field] : null;
         });
 
         const live_process = newItem.processes.find(p => p.pid === pidNum);
@@ -550,9 +673,9 @@ function appendAllChartsData(newItem) {
             const x_axis_labels = filtered.map(item => (item.timestamp - now) / 1000 + duration);
             process_chart.thread_cpu.data.labels = x_axis_labels;
             process_chart.thread_cpu._renderTimestamps = filtered.map(item => item.timestamp);
-            process_chart.thread_cpu.data.datasets = live_process.threads.map(thread => {
+            process_chart.thread_cpu.data.datasets = live_process.threads.flatMap(thread => {
                 const thread_label = `Thread[${thread.priority}] ${thread.tid}`;
-                return {
+                const parent = {
                     label: thread_label,
                     data: filtered.map(item => {
                         const proc = item.processes.find(p => p.pid === pidNum);
@@ -565,16 +688,42 @@ function appendAllChartsData(newItem) {
                     borderColor: getColorForLabel(thread_label),
                     backgroundColor: 'rgba(0, 0, 0, 0)',
                     borderWidth: 1,
-                    fill: false
+                    fill: false,
+                    isGroup: true
                 };
+                const children = ['User', 'System'].map(childSuffix => {
+                    const childLabel = `${thread_label} ${childSuffix}`;
+                    const field = childSuffix === 'User' ? 'cpu_user' : 'cpu_system';
+                    return {
+                        label: childLabel,
+                        data: filtered.map(item => {
+                            const proc = item.processes.find(p => p.pid === pidNum);
+                            if (proc) {
+                                const thread_data = proc.threads.find(t => t.tid === thread.tid);
+                                return thread_data ? thread_data[field] : null;
+                            }
+                            return null;
+                        }),
+                        borderColor: getColorForLabel(childLabel),
+                        backgroundColor: 'rgba(0, 0, 0, 0)',
+                        borderWidth: 1,
+                        fill: false,
+                        parentLabel: thread_label,
+                        hidden: true
+                    };
+                });
+                return [parent, ...children];
             });
             process_chart.thread_cpu.update();
         } else {
             appendChartData(process_chart.thread_cpu, newItem, (dataset, item) => {
-                const thread = dataset.label.split(' ')[1];
+                const parts = dataset.label.split(' ');
+                const tid = parts[1];
+                const suffix = parts[2];
+                const field = suffix ? (suffix === 'User' ? 'cpu_user' : 'cpu_system') : 'cpu_usage';
                 const process = item.processes.find(p => p.pid === pidNum);
-                const thread_data = process ? process.threads.find(t => t.tid === thread) : null;
-                return thread_data ? thread_data.cpu_usage : null;
+                const thread_data = process ? process.threads.find(t => String(t.tid) === tid) : null;
+                return thread_data ? thread_data[field] : null;
             });
         }
     }
@@ -783,15 +932,41 @@ function initSystemCharts(metrics) {
 
         for (const metric of system_cpu_metrics) {
             if (metrics.includes(metric)) {
-                const label = metric.replace('_', ' ').toUpperCase();
-                system_cpu.data.datasets.push({
-                    label: label,
-                    data: extended_data.map(item => item[metric]),
-                    borderColor: getColorForLabel(label),
-                    backgroundColor: 'rgba(0, 0, 0, 0)',
-                    borderWidth: 1,
-                    fill: false
-                });
+                if (metric === 'cpu_usage') {
+                    const label = 'CPU_USAGE';
+                    system_cpu.data.datasets.push({
+                        label: label,
+                        data: extended_data.map(item => item.cpu_usage),
+                        borderColor: getColorForLabel(label),
+                        backgroundColor: 'rgba(0, 0, 0, 0)',
+                        borderWidth: 1,
+                        fill: false,
+                        isGroup: true
+                    });
+                    const children = ['CPU_USER', 'CPU_SYSTEM', 'CPU_IOWAIT', 'CPU_IRQ', 'CPU_SOFTIRQ'];
+                    children.forEach(child => {
+                        system_cpu.data.datasets.push({
+                            label: child,
+                            data: extended_data.map(item => item[child.toLowerCase()]),
+                            borderColor: getColorForLabel(child),
+                            backgroundColor: 'rgba(0, 0, 0, 0)',
+                            borderWidth: 1,
+                            fill: false,
+                            parentLabel: label,
+                            hidden: true
+                        });
+                    });
+                } else {
+                    const label = metric.replace('_', ' ').toUpperCase();
+                    system_cpu.data.datasets.push({
+                        label: label,
+                        data: extended_data.map(item => item[metric]),
+                        borderColor: getColorForLabel(label),
+                        backgroundColor: 'rgba(0, 0, 0, 0)',
+                        borderWidth: 1,
+                        fill: false
+                    });
+                }
             }
         }
         system_cpu.data.labels = x_axis_labels;
@@ -827,17 +1002,33 @@ function initSystemCharts(metrics) {
                         borderColor: getColorForLabel(core_label),
                         backgroundColor: 'rgba(0, 0, 0, 0)',
                         borderWidth: 1,
-                        fill: false
+                        fill: false,
+                        isGroup: true
+                    });
+                    ['User', 'System'].forEach(childSuffix => {
+                        const childLabel = `${core_label} ${childSuffix}`;
+                        system_cores.data.datasets.push({
+                            label: childLabel,
+                            data: [],
+                            borderColor: getColorForLabel(childLabel),
+                            backgroundColor: 'rgba(0, 0, 0, 0)',
+                            borderWidth: 1,
+                            fill: false,
+                            parentLabel: core_label,
+                            hidden: true
+                        });
                     });
                 }
             });
         });
 
         system_cores.data.datasets.forEach(dataset => {
-            const core_index = parseInt(dataset.label.split(' ')[1], 10);
+            const parts = dataset.label.split(' ');
+            const core_index = parseInt(parts[1], 10);
+            const metric = parts.length > 2 ? 'cpu_' + parts[2].toLowerCase() : 'cpu_usage';
             dataset.data = extended_data.map(item => {
                 const core_data = item.cpu_cores.find(core => core.core === core_index);
-                return core_data ? core_data.cpu_usage : null;
+                return core_data ? core_data[metric] : null;
             });
         });
 
@@ -901,17 +1092,34 @@ function initProcessCharts(metrics) {
 
             const cpu_title = `[${process_display}] CPU Usage (%)`;
             const [process_cpu_chart, process_cpu_ctx, cpu_stats_id, cpu_wrapper] = addChart(`Process_${process_id}_CPU`, 'CPU Usage (%)', false, cpu_title);
-            const process_cpu_label = `${process_display} CPU`;
+            const process_cpu_group_label = 'CPU Total';
             process_cpu_chart.data.datasets.push({
-                label: process_cpu_label,
+                label: process_cpu_group_label,
                 data: data_storage.data.map(item => {
                     const proc = item.processes.find(p => p.pid === process_id);
                     return proc ? proc.cpu_usage : null;
                 }),
-                borderColor: getColorForLabel(process_cpu_label),
+                borderColor: getColorForLabel(process_cpu_group_label),
                 backgroundColor: 'rgba(0, 0, 0, 0)',
                 borderWidth: 1,
-                fill: false
+                fill: false,
+                isGroup: true
+            });
+            ['CPU User', 'CPU System'].forEach(childLabel => {
+                const field = childLabel === 'CPU User' ? 'cpu_user' : 'cpu_system';
+                process_cpu_chart.data.datasets.push({
+                    label: childLabel,
+                    data: data_storage.data.map(item => {
+                        const proc = item.processes.find(p => p.pid === process_id);
+                        return proc ? proc[field] : null;
+                    }),
+                    borderColor: getColorForLabel(childLabel),
+                    backgroundColor: 'rgba(0, 0, 0, 0)',
+                    borderWidth: 1,
+                    fill: false,
+                    parentLabel: process_cpu_group_label,
+                    hidden: true
+                });
             });
             process_cpu_chart.update();
 
@@ -932,7 +1140,29 @@ function initProcessCharts(metrics) {
                     borderColor: getColorForLabel(thread_label),
                     backgroundColor: 'rgba(0, 0, 0, 0)',
                     borderWidth: 1,
-                    fill: false
+                    fill: false,
+                    isGroup: true
+                });
+                ['User', 'System'].forEach(childSuffix => {
+                    const childLabel = `${thread_label} ${childSuffix}`;
+                    const field = childSuffix === 'User' ? 'cpu_user' : 'cpu_system';
+                    process_thread_cpu_chart.data.datasets.push({
+                        label: childLabel,
+                        data: data_storage.data.map(item => {
+                            const proc = item.processes.find(p => p.pid === process_id);
+                            if (proc) {
+                                const thread_data = proc.threads.find(t => t.tid === thread.tid);
+                                return thread_data ? thread_data[field] : null;
+                            }
+                            return null;
+                        }),
+                        borderColor: getColorForLabel(childLabel),
+                        backgroundColor: 'rgba(0, 0, 0, 0)',
+                        borderWidth: 1,
+                        fill: false,
+                        parentLabel: thread_label,
+                        hidden: true
+                    });
                 });
             });
             process_thread_cpu_chart.update();
