@@ -488,7 +488,6 @@ body {
 }
 
 .stats-table tbody tr.stats-row-group .metric-name {
-  font-weight: 600;
 }
 
 .stats-table tbody tr.stats-row-child .metric-name {

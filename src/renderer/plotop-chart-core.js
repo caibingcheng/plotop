@@ -651,25 +651,39 @@ function updateAllCharts(extended_data, x_axis_labels) {
             return thread_data ? thread_data[field] : null;
         });
 
-        const live_process = latest_data ? latest_data.processes.find(p => p.pid === pidNum) : null;
-        if (live_process) {
-            const expected_title = `${live_process.name} (pid=${pidNum})`;
+        function updateProcessDisplay(process_chart, pidNum, name) {
+            const expected_title = `${name} (pid=${pidNum})`;
             if (process_chart.title !== expected_title) {
                 process_chart.title = expected_title;
             }
+        }
+
+        const live_process = latest_data ? latest_data.processes.find(p => p.pid === pidNum) : null;
+        if (live_process) {
+            updateProcessDisplay(process_chart, pidNum, live_process.name);
         } else if (process_chart.title.includes('unknown')) {
             const historical_name = findProcessNameByPid(pidNum);
             if (historical_name) {
-                process_chart.title = `${historical_name} (pid=${pidNum})`;
+                updateProcessDisplay(process_chart, pidNum, historical_name);
             }
         }
 
         const is_exited = !current_pids.has(pidNum);
-        [process_chart.memory_wrapper, process_chart.cpu_wrapper, process_chart.thread_cpu_wrapper].forEach(wrapper => {
+        const wrappers = [
+            process_chart.memory_wrapper,
+            process_chart.cpu_wrapper,
+            process_chart.thread_cpu_wrapper
+        ];
+        const suffixes = [
+            'Memory(MB)',
+            'CPU Usage (%)',
+            'Thread CPU Usage (%)'
+        ];
+        wrappers.forEach((wrapper, index) => {
             if (!wrapper) return;
             const title_el = wrapper.querySelector('.chart-title');
             if (!title_el) return;
-            const desired_title = process_chart.title + (is_exited ? ' [exited]' : '');
+            const desired_title = `[${process_chart.title}] ${suffixes[index]}` + (is_exited ? ' [exited]' : '');
             if (title_el.textContent !== desired_title) {
                 title_el.textContent = desired_title;
             }
@@ -1178,7 +1192,7 @@ function initProcessCharts(metrics) {
             const process_display = `${process_name} (pid=${process_id})`;
             const memory_title = `[${process_display}] Memory(MB)`;
             const [process_memory_chart, process_memory_ctx, memory_stats_id, memory_wrapper] = addChart(`Process_${process_id}_Memory`, 'Memory(MB)', false, memory_title);
-            const process_memory_label = `${process_display} Memory`;
+            const process_memory_label = 'USED MEMORY';
             process_memory_chart.data.datasets.push({
                 label: process_memory_label,
                 data: data_storage.data.map(item => {
