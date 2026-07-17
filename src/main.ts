@@ -39,9 +39,9 @@ async function createMainWindow(serverPort: number) {
   }
 
   const win = new BrowserWindow({
-    width: 1280,
+    width: 1400,
     height: 800,
-    minWidth: 960,
+    minWidth: 1333,
     minHeight: 600,
     title: 'Plotop',
     backgroundColor: '#f0f0f0',

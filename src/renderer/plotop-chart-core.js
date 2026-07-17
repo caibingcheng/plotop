@@ -173,10 +173,15 @@ function updateStatistics(chart, stats_container_id, flash = false) {
 
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        ['metric', 'avg', 'min', 'max', 'stdDev'].forEach(column => {
+        ['action', 'metric', 'avg', 'min', 'max', 'stdDev'].forEach(column => {
             const th = document.createElement('th');
             th.setAttribute('data-column', column);
-            th.textContent = column === 'stdDev' ? 'StdDev' : column.charAt(0).toUpperCase() + column.slice(1);
+            th.textContent = column === 'stdDev' ? 'StdDev' : (column === 'action' ? 'Action' : column.charAt(0).toUpperCase() + column.slice(1));
+            if (column !== 'action') {
+                const sortIndicator = document.createElement('span');
+                sortIndicator.className = 'sort-indicator';
+                th.appendChild(sortIndicator);
+            }
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
@@ -190,6 +195,7 @@ function updateStatistics(chart, stats_container_id, flash = false) {
             const header = event.target.closest('th');
             if (!header) return;
             const column = header.getAttribute('data-column');
+            if (column === 'action') return;
             if (sortColumn === column) {
                 sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
             } else {
@@ -201,6 +207,54 @@ function updateStatistics(chart, stats_container_id, flash = false) {
             updateStatistics(chart, stats_container_id, false);
         });
 
+        function updateSortIndicators() {
+            thead.querySelectorAll('th').forEach(th => {
+                const column = th.getAttribute('data-column');
+                const indicator = th.querySelector('.sort-indicator');
+                if (!indicator) return;
+                th.classList.toggle('sort-active', column === sortColumn);
+                if (column === sortColumn) {
+                    indicator.textContent = sortOrder === 'asc' ? '▲' : '▼';
+                } else {
+                    indicator.textContent = '↕';
+                }
+            });
+        }
+        updateSortIndicators();
+
+        function toggleExpand(metric) {
+            expandedGroups[`${stats_container_id}:${metric}`] = !expandedGroups[`${stats_container_id}:${metric}`];
+            updateStatistics(chart, stats_container_id, false);
+        }
+
+        function toggleVisibility(dataset, metric) {
+            if (dataset.isGroup) {
+                const newHidden = !dataset.hidden;
+                dataset.hidden = newHidden;
+                if (newHidden) {
+                    dataset._childHiddenStates = {};
+                    datasets.forEach(d => {
+                        if (d.parentLabel === metric) {
+                            dataset._childHiddenStates[d.label] = d.hidden;
+                            d.hidden = true;
+                        }
+                    });
+                } else {
+                    datasets.forEach(d => {
+                        if (d.parentLabel === metric) {
+                            if (dataset._childHiddenStates && d.label in dataset._childHiddenStates) {
+                                d.hidden = dataset._childHiddenStates[d.label];
+                            }
+                        }
+                    });
+                }
+            } else {
+                dataset.hidden = !dataset.hidden;
+            }
+            chart.update();
+            updateStatistics(chart, stats_container_id, false);
+        }
+
         tbody.addEventListener('click', function (event) {
             const row = event.target.closest('tr');
             if (!row) return;
@@ -208,10 +262,15 @@ function updateStatistics(chart, stats_container_id, flash = false) {
             const dataset = datasets.find(d => d.label === metric);
             if (!dataset) return;
 
-            if (event.target.classList.contains('stats-row-expand-btn')) {
+            if (event.target.closest('.stats-row-expand-btn')) {
                 event.stopPropagation();
-                expandedGroups[`${stats_container_id}:${metric}`] = !expandedGroups[`${stats_container_id}:${metric}`];
-                updateStatistics(chart, stats_container_id, false);
+                toggleExpand(metric);
+                return;
+            }
+
+            if (event.target.closest('.visibility-toggle')) {
+                event.stopPropagation();
+                toggleVisibility(dataset, metric);
                 return;
             }
 
@@ -235,35 +294,56 @@ function updateStatistics(chart, stats_container_id, flash = false) {
                     document.body.removeChild(input);
                 });
                 input.click();
-            } else if (event.target.closest('.random-color-btn')) {
+                return;
+            }
+
+            if (event.target.closest('.random-color-btn')) {
                 event.stopPropagation();
                 randomizeColorForLabel(metric);
+                return;
+            }
+
+            const hasChildren = dataset.isGroup && datasets.some(d => d.parentLabel === metric);
+            if (dataset.isGroup && hasChildren) {
+                toggleExpand(metric);
             } else {
-                if (dataset.isGroup) {
-                    const newHidden = !dataset.hidden;
-                    dataset.hidden = newHidden;
-                    if (newHidden) {
-                        dataset._childHiddenStates = {};
-                        datasets.forEach(d => {
-                            if (d.parentLabel === metric) {
-                                dataset._childHiddenStates[d.label] = d.hidden;
-                                d.hidden = true;
-                            }
-                        });
-                    } else {
-                        datasets.forEach(d => {
-                            if (d.parentLabel === metric) {
-                                if (dataset._childHiddenStates && d.label in dataset._childHiddenStates) {
-                                    d.hidden = dataset._childHiddenStates[d.label];
-                                }
-                            }
-                        });
-                    }
-                } else {
-                    dataset.hidden = !dataset.hidden;
-                }
-                chart.update();
-                updateStatistics(chart, stats_container_id, false);
+                toggleVisibility(dataset, metric);
+            }
+        });
+
+        tbody.addEventListener('contextmenu', function (event) {
+            const row = event.target.closest('tr');
+            if (!row) return;
+            const metric = row.getAttribute('data-metric');
+            const dataset = datasets.find(d => d.label === metric);
+            if (!dataset) return;
+            event.preventDefault();
+            event.stopPropagation();
+
+            const visibleCount = datasets.filter(d => !d.hidden).length;
+            const isOnlyVisible = !dataset.hidden && visibleCount === 1;
+
+            if (isOnlyVisible) {
+                datasets.forEach(d => { d.hidden = false; });
+            } else {
+                datasets.forEach(d => { d.hidden = d.label !== metric; });
+            }
+            chart.update();
+            updateStatistics(chart, stats_container_id, false);
+        });
+    }
+
+    const thead = table.querySelector('thead');
+    if (thead) {
+        thead.querySelectorAll('th').forEach(th => {
+            const column = th.getAttribute('data-column');
+            const indicator = th.querySelector('.sort-indicator');
+            if (!indicator) return;
+            th.classList.toggle('sort-active', column === sortColumn);
+            if (column === sortColumn) {
+                indicator.textContent = sortOrder === 'asc' ? '▲' : '▼';
+            } else {
+                indicator.textContent = '↕';
             }
         });
     }
@@ -282,33 +362,40 @@ function updateStatistics(chart, stats_container_id, flash = false) {
         if (isNew) {
             tr = document.createElement('tr');
             tr.setAttribute('data-metric', row.metric);
-            tr.setAttribute('title', '点击隐藏/显示该线条');
+            tr.setAttribute('title', '左键单击隐藏/显示，右键单击显示一个/全部');
 
-            const nameTd = document.createElement('td');
+            const actionTd = document.createElement('td');
+            actionTd.className = 'action-cell';
 
             if (isGroup) {
                 const expandBtn = document.createElement('span');
                 expandBtn.className = 'stats-row-expand-btn';
                 expandBtn.title = '展开/折叠子项';
-                nameTd.appendChild(expandBtn);
+                actionTd.appendChild(expandBtn);
             }
+
+            const visibilityBtn = document.createElement('span');
+            visibilityBtn.className = 'visibility-toggle';
+            visibilityBtn.title = '隐藏/显示该线条';
+            actionTd.appendChild(visibilityBtn);
 
             const colorDot = document.createElement('span');
             colorDot.className = 'color-dot';
             colorDot.title = '点击选择颜色';
-            nameTd.appendChild(colorDot);
+            actionTd.appendChild(colorDot);
 
             const randomBtn = document.createElement('span');
             randomBtn.className = 'random-color-btn';
             randomBtn.title = '随机颜色';
             randomBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5 0 .55.45 1 1 1s1-.45 1-1c0-3.87-3.13-7-7-7zm-1 12c-2.76 0-5-2.24-5-5 0-.55-.45-1-1-1s-1 .45-1 1c0 3.87 3.13 7 7 7v3l4-4-4-4v3z"/></svg>';
-            nameTd.appendChild(randomBtn);
+            actionTd.appendChild(randomBtn);
 
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'metric-name';
-            nameSpan.textContent = row.metric;
-            nameTd.appendChild(nameSpan);
-            tr.appendChild(nameTd);
+            const metricTd = document.createElement('td');
+            metricTd.className = 'metric-name';
+            metricTd.textContent = row.metric;
+
+            tr.appendChild(actionTd);
+            tr.appendChild(metricTd);
 
             ['avg', 'min', 'max', 'stdDev'].forEach(column => {
                 const td = document.createElement('td');
@@ -347,6 +434,21 @@ function updateStatistics(chart, stats_container_id, flash = false) {
         tr.setAttribute('data-stdDev', row.stdDev);
 
         tr.className = `${row.hidden ? 'metric-hidden' : ''} ${isUpdated ? 'updated-row' : ''} ${isGroup ? 'stats-row-group' : ''} ${isChild ? 'stats-row-child' : ''}`.trim();
+
+        const hasChildren = isGroup && datasets.some(d => d.parentLabel === row.metric);
+        const rowTitle = (isGroup && hasChildren)
+            ? '左键单击展开/折叠，右键单击显示一个/全部'
+            : '左键单击隐藏/显示，右键单击显示一个/全部';
+        if (tr.getAttribute('title') !== rowTitle) {
+            tr.setAttribute('title', rowTitle);
+        }
+
+        const visibilityBtn = tr.querySelector('.visibility-toggle');
+        if (visibilityBtn) {
+            visibilityBtn.innerHTML = row.hidden
+                ? '<svg viewBox="0 0 24 24"><path d="M12 6c3.79 0 7.17 2.13 8.82 5.5-.59 1.1-1.39 2.09-2.34 2.9L22 19.35 20.65 21l-2.86-2.86C16.46 19.37 14.31 20.25 12 20.25c-3.79 0-7.17-2.13-8.82-5.5.95-1.78 2.42-3.2 4.17-4.08L2.6 5.1 4 3.7l4.7 4.7C9.71 7.64 10.79 7.04 12 6.83V6m0-1.5c-1.39 0-2.72.3-3.96.83L12 10.3l3.96-3.96C14.72 4.8 13.39 4.5 12 4.5m-7.64 2.1L3.75 7.2C2.67 8.64 1.95 10.31 1.69 12.1 2.94 15.17 5.5 17.5 8.45 18.56l-2.24-2.24C4.5 15.21 2.9 13.83 4.36 6.6z"/></svg>'
+                : '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>';
+        }
 
         const colorDot = tr.querySelector('.color-dot');
         if (colorDot) colorDot.style.backgroundColor = row.color;

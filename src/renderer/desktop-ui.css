@@ -443,6 +443,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   overflow: hidden;
+  table-layout: fixed;
 }
 
 .stats-table th,
@@ -494,21 +495,71 @@ body {
   padding-left: 1.2rem;
 }
 
+.stats-table th[data-column="action"],
+.stats-table td.action-cell {
+  white-space: nowrap;
+  width: 200px;
+  min-width: 200px;
+}
+
+.stats-table th[data-column="action"] {
+  cursor: default;
+}
+
+.stats-table th[data-column="action"]:hover {
+  background-color: transparent;
+}
+
+.stats-table td.action-cell {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.stats-table th[data-column="metric"],
+.stats-table td.metric-name {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.stats-table th[data-column="avg"],
+.stats-table th[data-column="min"],
+.stats-table th[data-column="max"],
+.stats-table th[data-column="stdDev"],
+.stats-table td.val-avg,
+.stats-table td.val-min,
+.stats-table td.val-max,
+.stats-table td.val-stdDev {
+  width: 200px;
+  text-align: right;
+}
+
+.stats-row-expand-btn,
+.color-dot,
+.random-color-btn,
+.visibility-toggle {
+  flex-shrink: 0;
+}
+
 .stats-row-expand-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin-right: 4px;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
   cursor: pointer;
   font-size: 10px;
   color: #666;
   user-select: none;
+  border-radius: 3px;
+  padding: 4px;
+  box-sizing: content-box;
 }
 
 .stats-row-expand-btn:hover {
   color: #000;
+  background-color: var(--bg-hover);
 }
 
 @keyframes flash {
@@ -522,28 +573,37 @@ body {
 
 .color-dot {
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
+  padding: 4px;
   border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: middle;
+  margin-right: 2px;
   cursor: pointer;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  vertical-align: middle;
+  background-clip: content-box;
+  border: 1px solid transparent;
+  box-sizing: content-box;
+}
+
+.color-dot:hover {
+  border-color: rgba(0, 0, 0, 0.1);
 }
 
 .random-color-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-right: 6px;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
   cursor: pointer;
   user-select: none;
   vertical-align: middle;
   font-size: 12px;
   color: var(--text-secondary);
   border-radius: 3px;
+  padding: 4px;
+  box-sizing: content-box;
 }
 
 .random-color-btn:hover {
@@ -552,9 +612,61 @@ body {
 }
 
 .random-color-btn svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   fill: currentColor;
+}
+
+.visibility-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: middle;
+  color: var(--text-secondary);
+  border-radius: 3px;
+  padding: 4px;
+  box-sizing: content-box;
+}
+
+.visibility-toggle:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.visibility-toggle svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.metric-hidden .visibility-toggle {
+  color: #999;
+}
+
+.metric-hidden .visibility-toggle svg path {
+  fill: #999;
+}
+
+.sort-indicator {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #aaa;
+  vertical-align: middle;
+}
+
+.stats-table th.sort-active .sort-indicator {
+  color: var(--accent-color);
+}
+
+.stats-table th.sort-active {
+  color: var(--text-primary);
 }
 
 .chart-wrapper {
