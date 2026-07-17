@@ -81,6 +81,16 @@
             font-size: 18px;
             line-height: 1;
         }
+
+        .client-offline-banner {
+            display: none;
+            background-color: #fff3cd;
+            color: #856404;
+            border-bottom: 1px solid #ffeeba;
+            padding: 6px 16px;
+            font-size: 12px;
+            text-align: center;
+        }
     </style>
     <script src="/vendor/socket.io.js"></script>
     <script type="text/javascript">
@@ -94,6 +104,19 @@
 
             var socket = io.connect('/');
             var displayedIps = new Set();
+            var offlineIps = new Set();
+            var offlineBanner = document.getElementById("offlineBanner");
+
+            function updateOfflineBanner() {
+                if (!offlineBanner) return;
+                if (offlineIps.size === 0) {
+                    offlineBanner.style.display = "none";
+                    offlineBanner.textContent = "";
+                } else {
+                    offlineBanner.style.display = "block";
+                    offlineBanner.textContent = "客户端已断开连接 / Client disconnected: " + Array.from(offlineIps).join(", ");
+                }
+            }
 
             function hideEmptyHint() {
                 var emptyHint = document.getElementById("emptyHint");
@@ -144,6 +167,12 @@
                 hideEmptyHint();
                 var ip = data.ip;
                 if (!ip) return;
+                if (data.alive) {
+                    offlineIps.delete(ip);
+                } else {
+                    offlineIps.add(ip);
+                }
+                updateOfflineBanner();
                 if (displayedIps.has(ip)) {
                     updateIpItem(ip, data.alive);
                 } else {
@@ -193,6 +222,7 @@
 </head>
 
 <body>
+    <div id="offlineBanner" class="client-offline-banner"></div>
     <div class="app-toolbar">
         <div class="toolbar-title">
             <span>Plotop Clients</span>

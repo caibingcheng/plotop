@@ -75,6 +75,16 @@
             border-radius: 3px;
             font-family: monospace;
         }
+
+        .client-offline-banner {
+            display: none;
+            background-color: #fff3cd;
+            color: #856404;
+            border-bottom: 1px solid #ffeeba;
+            padding: 6px 16px;
+            font-size: 12px;
+            text-align: center;
+        }
     </style>
     <script src="/vendor/socket.io.js"></script>
     <script src="/vendor/chart.umd.js"></script>
@@ -606,6 +616,19 @@
             socket.on('connect', function () {
                 console.log('socket connected, subscribing', ip);
                 subscribe();
+            });
+
+            socket.on('new_ip', function (data) {
+                if (data.ip !== ip) return;
+                var banner = document.getElementById('offlineBanner');
+                if (!banner) return;
+                if (data.alive) {
+                    banner.style.display = 'none';
+                    banner.textContent = '';
+                } else {
+                    banner.style.display = 'block';
+                    banner.textContent = 'Client ' + data.ip + ' disconnected. Waiting for reconnection...';
+                }
             });
 
             function needsProcessChartUpdate() {
@@ -1195,6 +1218,7 @@
 </head>
 
 <body>
+    <div id="offlineBanner" class="client-offline-banner"></div>
     <div id="config" class="app-toolbar">
         <div class="app-toolbar-group" style="margin-right: auto;">
             <button id="jumpMenuToggle" class="app-button">Charts</button>

@@ -34,7 +34,7 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       client.socket = clientSocket;
       client.outbound = new AsyncMessageQueue();
       client.lastSeen = new Date();
-      client.alive = true;
+      setClientAlive(clientIp, true, io);
       client.hasProcessList = false;
       client.lastProcessList = {};
       client.dataSequence = (client.dataSequence || 0) + 1;
@@ -53,7 +53,7 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       const filename = path.join('log', `plotop_${timestamp}_${clientIp}.txt`);
 
       const readerPromise = clientReader(clientSocket, clientIp, filename, io, client.outbound);
-      const writerPromise = clientWriter(clientSocket, clientIp);
+      const writerPromise = clientWriter(clientSocket, clientIp, io);
 
       Promise.all([readerPromise, writerPromise]).then(() => {
         client.alive = false;
@@ -158,6 +158,14 @@ function safeClose(socket: net.Socket) {
   }
 }
 
+function setClientAlive(ip: string, alive: boolean, io: SocketIoServer) {
+  const client = clients.get(ip);
+  if (client) {
+    client.alive = alive;
+    io.emit('new_ip', { ip, alive });
+  }
+}
+
 function reapplyFilterIfChanged(ip: string, client: ClientState) {
   if (!client.filterSelections || client.filterSelections.length === 0) return;
   const newPids = resolveSelectionPids(client.filterSelections, client.lastProcessList);
@@ -238,8 +246,7 @@ async function clientReader(
   } catch (e) {
     console.error(`Reader error for ${ip}:`, e);
   } finally {
-    const client = clients.get(ip);
-    if (client) client.alive = false;
+    setClientAlive(ip, false, io);
     outbound.put(null);
     safeClose(clientSocket);
   }
@@ -322,7 +329,7 @@ function writeDataToFile(filename: string, data: string) {
   fs.appendFileSync(filename, data);
 }
 
-async function clientWriter(clientSocket: net.Socket, ip: string) {
+async function clientWriter(clientSocket: net.Socket, ip: string, io: SocketIoServer) {
   const heartbeatInterval = 30000;
   let nextHeartbeat = Date.now() + heartbeatInterval;
 
@@ -354,8 +361,7 @@ async function clientWriter(clientSocket: net.Socket, ip: string) {
   } catch (e) {
     console.error(`Writer error for ${ip}:`, e);
   } finally {
-    const client = clients.get(ip);
-    if (client) client.alive = false;
+    setClientAlive(ip, false, io);
     safeClose(clientSocket);
   }
 }
