@@ -1,3 +1,5 @@
+import { ProcessSelection } from './process-selection';
+
 export interface ClientState {
   id: number;
   subscribed: { count: number; lastTime: Date };
@@ -7,6 +9,7 @@ export interface ClientState {
   outbound: AsyncMessageQueue;
   lastSeen: Date;
   filterPids: number[];
+  filterSelections: ProcessSelection[];
   socket: any;
   hasProcessList: boolean;
   lastProcessList: any;
@@ -60,6 +63,7 @@ export function getOrCreateClient(ip: string): ClientState {
       outbound: new AsyncMessageQueue(),
       lastSeen: new Date(),
       filterPids: [],
+      filterSelections: [],
       socket: null,
       hasProcessList: false,
       lastProcessList: {},

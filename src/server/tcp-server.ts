@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Server as SocketIoServer } from 'socket.io';
 import { clients, getOrCreateClient, ClientState, AsyncMessageQueue } from './store';
+import { resolveSelectionPids, arraysEqual } from './process-selection';
 
 function isIgnorableSocketError(err: any): boolean {
   return err && (err.code === 'EPIPE' || err.code === 'ECONNRESET');
@@ -40,7 +41,8 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       client.data = [];
       client.subscribed = { count: 10, lastTime: new Date() };
 
-      if (client.filterPids && client.filterPids.length > 0) {
+      if (client.filterSelections && client.filterSelections.length > 0) {
+        client.filterPids = resolveSelectionPids(client.filterSelections, client.lastProcessList);
         client.outbound.put(JSON.stringify({ type: 'filter', patterns: [], pids: client.filterPids }) + '\n');
         console.log(`Re-sent filter to ${clientIp}: ${client.filterPids}`);
       }
@@ -156,6 +158,16 @@ function safeClose(socket: net.Socket) {
   }
 }
 
+function reapplyFilterIfChanged(ip: string, client: ClientState) {
+  if (!client.filterSelections || client.filterSelections.length === 0) return;
+  const newPids = resolveSelectionPids(client.filterSelections, client.lastProcessList);
+  const oldPids = client.filterPids || [];
+  if (arraysEqual(newPids, oldPids)) return;
+  client.filterPids = newPids;
+  client.outbound.put(JSON.stringify({ type: 'filter', patterns: [], pids: newPids }) + '\n');
+  console.log(`Re-sent filter to ${ip}: ${newPids}`);
+}
+
 async function clientReader(
   clientSocket: net.Socket,
   ip: string,
@@ -210,11 +222,12 @@ async function clientReader(
             client.hasProcessList = true;
             client.lastProcessList = data;
             io.emit(`process_list/${ip}`, data);
+            reapplyFilterIfChanged(ip, client);
             break;
           case 'filter_ack':
             io.emit(`filter_status/${ip}`, {
               matched_count: data.matched_count || 0,
-              requested_count: client.filterPids.length,
+              requested_count: client.filterSelections.length,
             });
             break;
           default:

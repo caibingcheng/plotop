@@ -478,8 +478,40 @@ function updateStatistics(chart, stats_container_id, flash = false) {
 }
 
 function getMetricsValue() {
-    const pidMetrics = Array.from(selectedPids).map(pid => `pid=${pid}`);
-    return [...selectedSystemMetrics, ...pidMetrics].join(',');
+    const processMetrics = [];
+    if (typeof appliedProcessSelections !== 'undefined' && appliedProcessSelections) {
+        for (const sel of appliedProcessSelections.values()) {
+            switch (sel.mode) {
+                case 'pid': processMetrics.push(`pid=${sel.pid}`); break;
+                case 'name': processMetrics.push(`name=${sel.name}`); break;
+                case 'pid+name': processMetrics.push(`pid+name=${sel.pid}:${sel.name}`); break;
+            }
+        }
+    }
+    return [...selectedSystemMetrics, ...processMetrics].join(',');
+}
+
+function getSelectionKey(selection) {
+    if (selection.mode === 'name') return `name:${selection.name}`;
+    if (selection.mode === 'pid+name') return `pid+name:${selection.pid}:${selection.name}`;
+    return `pid:${selection.pid}`;
+}
+
+function resolveCurrentPid(selection, processList) {
+    if (!processList || !Array.isArray(processList)) return null;
+    switch (selection.mode) {
+        case 'pid':
+            return selection.pid;
+        case 'name': {
+            const matches = processList.filter(p => p && p.name === selection.name);
+            return matches.length === 1 ? matches[0].pid : null;
+        }
+        case 'pid+name': {
+            const match = processList.find(p => p && p.pid === selection.pid && p.name === selection.name);
+            return match ? match.pid : null;
+        }
+    }
+    return null;
 }
 
 function addChart(name, y_axis_label, is_system_chart = false, chart_title = null) {
@@ -579,31 +611,33 @@ function updateAllCharts(extended_data, x_axis_labels) {
 
     // 更新进程图表
     const latest_data = extended_data[extended_data.length - 1] || null;
-    const current_pids = latest_data ? new Set(latest_data.processes.map(p => p.pid)) : new Set();
-    for (const pid in process_charts) {
-        const pidNum = Number(pid);
-        const process_chart = process_charts[pid];
+    for (const key in process_charts) {
+        const process_chart = process_charts[key];
         if (!process_chart) continue;
+        const selection = process_chart.selection;
+        const live_process = selection ? findProcessForSelection(latest_data, selection) : null;
+        const is_exited = !live_process;
+
         updateChartData(process_chart.memory, extended_data, x_axis_labels, (datasets, item) => {
-            const process = item.processes.find(p => p.pid === pidNum);
+            const process = findProcessForSelection(item, selection);
             return process ? process.memory : null;
         });
         updateChartData(process_chart.cpu, extended_data, x_axis_labels, (dataset, item) => {
-            const process = item.processes.find(p => p.pid === pidNum);
+            const process = findProcessForSelection(item, selection);
             if (!process) return null;
             const metricMap = { 'CPU Total': 'cpu_usage', 'CPU User': 'cpu_user', 'CPU System': 'cpu_system' };
             const field = metricMap[dataset.label];
             return field !== undefined ? process[field] : null;
         });
-        const live_process_for_threads = latest_data ? latest_data.processes.find(p => p.pid === pidNum) : null;
-        if (live_process_for_threads) {
-            live_process_for_threads.threads.forEach(thread => {
+
+        if (live_process) {
+            live_process.threads.forEach(thread => {
                 const thread_label = `Thread[${thread.priority}] ${thread.tid}`;
                 if (!process_chart.thread_cpu.data.datasets.some(d => d.label === thread_label)) {
                     process_chart.thread_cpu.data.datasets.push({
                         label: thread_label,
                         data: extended_data.map(item => {
-                            const proc = item.processes.find(p => p.pid === pidNum);
+                            const proc = findProcessForSelection(item, selection);
                             if (proc) {
                                 const thread_data = proc.threads.find(t => t.tid === thread.tid);
                                 return thread_data ? thread_data.cpu_usage : null;
@@ -622,7 +656,7 @@ function updateAllCharts(extended_data, x_axis_labels) {
                         process_chart.thread_cpu.data.datasets.push({
                             label: childLabel,
                             data: extended_data.map(item => {
-                                const proc = item.processes.find(p => p.pid === pidNum);
+                                const proc = findProcessForSelection(item, selection);
                                 if (proc) {
                                     const thread_data = proc.threads.find(t => t.tid === thread.tid);
                                     return thread_data ? thread_data[field] : null;
@@ -646,29 +680,22 @@ function updateAllCharts(extended_data, x_axis_labels) {
             const tid = parts[1];
             const suffix = parts[2];
             const field = suffix ? (suffix === 'User' ? 'cpu_user' : 'cpu_system') : 'cpu_usage';
-            const process = item.processes.find(p => p.pid === pidNum);
+            const process = findProcessForSelection(item, selection);
             const thread_data = process ? process.threads.find(t => String(t.tid) === tid) : null;
             return thread_data ? thread_data[field] : null;
         });
 
-        function updateProcessDisplay(process_chart, pidNum, name) {
-            const expected_title = `${name} (pid=${pidNum})`;
+        function updateProcessDisplay(process_chart, displayPid, name) {
+            const expected_title = `${name} (pid=${displayPid})`;
             if (process_chart.title !== expected_title) {
                 process_chart.title = expected_title;
             }
         }
 
-        const live_process = latest_data ? latest_data.processes.find(p => p.pid === pidNum) : null;
-        if (live_process) {
-            updateProcessDisplay(process_chart, pidNum, live_process.name);
-        } else if (process_chart.title.includes('unknown')) {
-            const historical_name = findProcessNameByPid(pidNum);
-            if (historical_name) {
-                updateProcessDisplay(process_chart, pidNum, historical_name);
-            }
-        }
+        const displayPid = live_process ? live_process.pid : (selection ? selection.pid : 0);
+        const displayName = live_process ? live_process.name : (findProcessNameByPid(displayPid) || (selection ? selection.name : 'unknown'));
+        updateProcessDisplay(process_chart, displayPid, displayName);
 
-        const is_exited = !current_pids.has(pidNum);
         const wrappers = [
             process_chart.memory_wrapper,
             process_chart.cpu_wrapper,
@@ -754,25 +781,25 @@ function appendAllChartsData(newItem) {
         });
     }
 
-    for (const pid in process_charts) {
-        const pidNum = Number(pid);
-        const process_chart = process_charts[pid];
+    for (const key in process_charts) {
+        const process_chart = process_charts[key];
         if (!process_chart) continue;
+        const selection = process_chart.selection;
 
         appendChartData(process_chart.memory, newItem, (dataset, item) => {
-            const process = item.processes.find(p => p.pid === pidNum);
+            const process = findProcessForSelection(item, selection);
             return process ? process.memory : null;
         });
 
         appendChartData(process_chart.cpu, newItem, (dataset, item) => {
-            const process = item.processes.find(p => p.pid === pidNum);
+            const process = findProcessForSelection(item, selection);
             if (!process) return null;
             const metricMap = { 'CPU Total': 'cpu_usage', 'CPU User': 'cpu_user', 'CPU System': 'cpu_system' };
             const field = metricMap[dataset.label];
             return field !== undefined ? process[field] : null;
         });
 
-        const live_process = newItem.processes.find(p => p.pid === pidNum);
+        const live_process = findProcessForSelection(newItem, selection);
         let needsThreadRebuild = false;
         if (live_process) {
             live_process.threads.forEach(thread => {
@@ -794,7 +821,7 @@ function appendAllChartsData(newItem) {
                 const parent = {
                     label: thread_label,
                     data: filtered.map(item => {
-                        const proc = item.processes.find(p => p.pid === pidNum);
+                        const proc = findProcessForSelection(item, selection);
                         if (proc) {
                             const thread_data = proc.threads.find(t => t.tid === thread.tid);
                             return thread_data ? thread_data.cpu_usage : null;
@@ -813,7 +840,7 @@ function appendAllChartsData(newItem) {
                     return {
                         label: childLabel,
                         data: filtered.map(item => {
-                            const proc = item.processes.find(p => p.pid === pidNum);
+                            const proc = findProcessForSelection(item, selection);
                             if (proc) {
                                 const thread_data = proc.threads.find(t => t.tid === thread.tid);
                                 return thread_data ? thread_data[field] : null;
@@ -837,7 +864,7 @@ function appendAllChartsData(newItem) {
                 const tid = parts[1];
                 const suffix = parts[2];
                 const field = suffix ? (suffix === 'User' ? 'cpu_user' : 'cpu_system') : 'cpu_usage';
-                const process = item.processes.find(p => p.pid === pidNum);
+                const process = findProcessForSelection(item, selection);
                 const thread_data = process ? process.threads.find(t => String(t.tid) === tid) : null;
                 return thread_data ? thread_data[field] : null;
             });
@@ -1153,50 +1180,93 @@ function initSystemCharts(metrics) {
     }
 }
 
-function initProcessCharts(metrics) {
-    const keep_pids = new Set();
-    const runtime_pids = new Set();
+function findProcessForSelection(item, selection) {
+    if (!item || !item.processes || !selection) return null;
+    switch (selection.mode) {
+        case 'pid':
+            return item.processes.find(p => p.pid === selection.pid) || null;
+        case 'name': {
+            const byName = item.processes.filter(p => p.name === selection.name);
+            if (byName.length === 0) return null;
+            if (byName.length === 1) return byName[0];
+            if (selection.pid) {
+                const byPid = byName.find(p => p.pid === selection.pid);
+                if (byPid) return byPid;
+            }
+            return null;
+        }
+        case 'pid+name':
+            return item.processes.find(p => p.pid === selection.pid && p.name === selection.name) || null;
+    }
+    return null;
+}
 
-    // pid= selections are persistent: keep charts even after the process exits
-    metrics.filter(metric => metric.startsWith('pid=')).forEach(metric => {
-        const pid = parseInt(metric.split('=')[1], 10);
-        if (!isNaN(pid)) keep_pids.add(pid);
+function initProcessCharts(metrics) {
+    const latest_data = data_storage.last();
+    const processList = latest_data ? latest_data.processes : [];
+
+    const activeSelections = new Map();
+
+    // Parse metrics
+    metrics.forEach(metric => {
+        if (metric.startsWith('pid=')) {
+            const pid = parseInt(metric.split('=')[1], 10);
+            if (!isNaN(pid)) {
+                const sel = { pid, name: '', mode: 'pid' };
+                activeSelections.set(getSelectionKey(sel), sel);
+            }
+        } else if (metric.startsWith('name=')) {
+            const name = metric.split('=').slice(1).join('=');
+            if (name) {
+                const sel = { pid: 0, name, mode: 'name' };
+                activeSelections.set(getSelectionKey(sel), sel);
+            }
+        } else if (metric.startsWith('pid+name=')) {
+            const rest = metric.split('=').slice(1).join('=');
+            const [pidStr, name] = rest.split(':', 2);
+            const pid = parseInt(pidStr, 10);
+            if (!isNaN(pid) && name) {
+                const sel = { pid, name, mode: 'pid+name' };
+                activeSelections.set(getSelectionKey(sel), sel);
+            }
+        }
     });
 
-    // global selectedPids are also persistent
-    if (typeof selectedPids !== 'undefined') {
-        selectedPids.forEach(pid => keep_pids.add(pid));
+    // global appliedProcessSelections are also persistent
+    if (typeof appliedProcessSelections !== 'undefined') {
+        appliedProcessSelections.forEach((sel, key) => {
+            activeSelections.set(key, sel);
+        });
     }
 
     // comm= selections only match currently running processes
     const comms = metrics.filter(metric => metric.startsWith('comm='));
-    const latest_data = data_storage.last();
     if (latest_data && comms.length > 0) {
         latest_data.processes.forEach(proc => {
             if (comms.some(c => proc.name.includes(c.split('=')[1]))) {
-                runtime_pids.add(proc.pid);
+                const sel = { pid: proc.pid, name: proc.name, mode: 'pid' };
+                activeSelections.set(getSelectionKey(sel), sel);
             }
         });
     }
 
-    const active_pids = new Set([...keep_pids, ...runtime_pids]);
+    // Create or keep charts for all active selections
+    for (const [key, selection] of activeSelections) {
+        const currentProcess = findProcessForSelection(latest_data, selection);
+        const process_id = currentProcess ? currentProcess.pid : (selection.pid || 0);
+        const process_name = currentProcess ? currentProcess.name : (findProcessNameByPid(process_id) || selection.name || 'unknown');
+        const process_threads = currentProcess ? currentProcess.threads : [];
 
-    // Create or keep charts for all active pids
-    for (const pid of active_pids) {
-        const process = latest_data?.processes.find(p => p.pid === pid);
-        const process_id = pid;
-        const process_name = process ? process.name : (findProcessNameByPid(pid) || 'unknown');
-        const process_threads = process ? process.threads : [];
-
-        if (!process_charts[process_id]) {
+        if (!process_charts[key]) {
+            const chart_id_prefix = key.replace(/[^a-zA-Z0-9]/g, '_');
             const process_display = `${process_name} (pid=${process_id})`;
             const memory_title = `[${process_display}] Memory(MB)`;
-            const [process_memory_chart, process_memory_ctx, memory_stats_id, memory_wrapper] = addChart(`Process_${process_id}_Memory`, 'Memory(MB)', false, memory_title);
+            const [process_memory_chart, process_memory_ctx, memory_stats_id, memory_wrapper] = addChart(`Process_${chart_id_prefix}_Memory`, 'Memory(MB)', false, memory_title);
             const process_memory_label = 'USED MEMORY';
             process_memory_chart.data.datasets.push({
                 label: process_memory_label,
                 data: data_storage.data.map(item => {
-                    const proc = item.processes.find(p => p.pid === process_id);
+                    const proc = findProcessForSelection(item, selection);
                     return proc ? proc.memory : null;
                 }),
                 borderColor: getColorForLabel(process_memory_label),
@@ -1207,12 +1277,12 @@ function initProcessCharts(metrics) {
             process_memory_chart.update();
 
             const cpu_title = `[${process_display}] CPU Usage (%)`;
-            const [process_cpu_chart, process_cpu_ctx, cpu_stats_id, cpu_wrapper] = addChart(`Process_${process_id}_CPU`, 'CPU Usage (%)', false, cpu_title);
+            const [process_cpu_chart, process_cpu_ctx, cpu_stats_id, cpu_wrapper] = addChart(`Process_${chart_id_prefix}_CPU`, 'CPU Usage (%)', false, cpu_title);
             const process_cpu_group_label = 'CPU Total';
             process_cpu_chart.data.datasets.push({
                 label: process_cpu_group_label,
                 data: data_storage.data.map(item => {
-                    const proc = item.processes.find(p => p.pid === process_id);
+                    const proc = findProcessForSelection(item, selection);
                     return proc ? proc.cpu_usage : null;
                 }),
                 borderColor: getColorForLabel(process_cpu_group_label),
@@ -1226,7 +1296,7 @@ function initProcessCharts(metrics) {
                 process_cpu_chart.data.datasets.push({
                     label: childLabel,
                     data: data_storage.data.map(item => {
-                        const proc = item.processes.find(p => p.pid === process_id);
+                        const proc = findProcessForSelection(item, selection);
                         return proc ? proc[field] : null;
                     }),
                     borderColor: getColorForLabel(childLabel),
@@ -1240,13 +1310,13 @@ function initProcessCharts(metrics) {
             process_cpu_chart.update();
 
             const thread_cpu_title = `[${process_display}] Thread CPU Usage (%)`;
-            const [process_thread_cpu_chart, process_thread_cpu_ctx, thread_cpu_stats_id, thread_cpu_wrapper] = addChart(`Process_${process_id}_ThreadsCPU`, 'Thread CPU Usage (%)', false, thread_cpu_title);
+            const [process_thread_cpu_chart, process_thread_cpu_ctx, thread_cpu_stats_id, thread_cpu_wrapper] = addChart(`Process_${chart_id_prefix}_ThreadsCPU`, 'Thread CPU Usage (%)', false, thread_cpu_title);
             process_threads.forEach(thread => {
                 const thread_label = `Thread[${thread.priority}] ${thread.tid}`;
                 process_thread_cpu_chart.data.datasets.push({
                     label: thread_label,
                     data: data_storage.data.map(item => {
-                        const proc = item.processes.find(p => p.pid === process_id);
+                        const proc = findProcessForSelection(item, selection);
                         if (proc) {
                             const thread_data = proc.threads.find(t => t.tid === thread.tid);
                             return thread_data ? thread_data.cpu_usage : null;
@@ -1265,7 +1335,7 @@ function initProcessCharts(metrics) {
                     process_thread_cpu_chart.data.datasets.push({
                         label: childLabel,
                         data: data_storage.data.map(item => {
-                            const proc = item.processes.find(p => p.pid === process_id);
+                            const proc = findProcessForSelection(item, selection);
                             if (proc) {
                                 const thread_data = proc.threads.find(t => t.tid === thread.tid);
                                 return thread_data ? thread_data[field] : null;
@@ -1283,7 +1353,7 @@ function initProcessCharts(metrics) {
             });
             process_thread_cpu_chart.update();
 
-            process_charts[process_id] = {
+            process_charts[key] = {
                 memory: process_memory_chart,
                 memory_ctx: process_memory_ctx,
                 memory_stats_id: memory_stats_id,
@@ -1296,20 +1366,21 @@ function initProcessCharts(metrics) {
                 thread_cpu_ctx: process_thread_cpu_ctx,
                 thread_cpu_stats_id: thread_cpu_stats_id,
                 thread_cpu_wrapper: thread_cpu_wrapper,
-                title: process_display
+                title: process_display,
+                selection: selection
             };
         }
     }
 
     // 移除未指定的进程图表
-    for (const pid in process_charts) {
-        if (!active_pids.has(Number(pid))) {
-            const process_chart = process_charts[pid];
+    for (const key in process_charts) {
+        if (!activeSelections.has(key)) {
+            const process_chart = process_charts[key];
             if (process_chart) {
                 process_chart.memory.destroy();
                 process_chart.cpu.destroy();
                 process_chart.thread_cpu.destroy();
-                delete process_charts[pid];
+                delete process_charts[key];
 
                 if (process_chart.memory_wrapper && process_chart.memory_wrapper.parentNode) {
                     process_chart.memory_wrapper.parentNode.removeChild(process_chart.memory_wrapper);
