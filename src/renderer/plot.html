@@ -41,19 +41,104 @@
 
         .lock-controls {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 8px;
+            justify-content: center;
+            width: 180px;
             margin-left: auto;
-            padding-left: 8px;
         }
 
-        .lock-controls input[type="checkbox"] {
-            margin: 0;
+        .lock-slider-wrapper {
+            width: 100%;
+            padding: 0 24px;
+            box-sizing: border-box;
+        }
+
+        .lock-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--border-color);
+            border-radius: 3px;
+            outline: none;
             cursor: pointer;
         }
 
-        .lock-controls::before {
-            content: '';
+        .lock-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            cursor: pointer;
+        }
+
+        .lock-slider-labels {
+            position: relative;
+            width: 100%;
+            height: 20px;
+            margin-top: 4px;
+        }
+
+        .lock-slider-labels span {
+            position: absolute;
+            top: 0;
+            transform: translateX(-50%);
+            padding: 2px 6px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .lock-slider-labels span:nth-child(1) { left: 0%; }
+        .lock-slider-labels span:nth-child(2) { left: 50%; }
+        .lock-slider-labels span:nth-child(3) { left: 100%; }
+
+        .lock-slider-labels span.active {
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+
+        .lock-slider-labels span:hover {
+            color: var(--text-primary);
+        }
+
+        .selected-process-header {
+            display: flex;
+            align-items: center;
+            padding: 4px 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .selected-process-header .process-col {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .selected-process-header .lock-mode-col {
+            width: 180px;
+            text-align: center;
+        }
+
+        #selectedProcessList .app-list-item > label {
+            min-width: 0;
+        }
+
+        #selectedProcessList .app-list-item > label span {
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #filter-panel {
+            width: 480px;
         }
 
         #content {
@@ -925,8 +1010,7 @@
                 label.appendChild(checkbox);
 
                 const textSpan = document.createElement('span');
-                const modeLabel = selection.mode === 'pid' ? ' [pid]' : (selection.mode === 'name' ? ' [name]' : ' [pid+name]');
-                textSpan.textContent = selection.pid + ': ' + selection.name + modeLabel;
+                textSpan.textContent = selection.pid + ': ' + selection.name;
                 if (!currentPid) {
                     textSpan.textContent += ' (changed now)';
                 }
@@ -936,36 +1020,54 @@
                 const controls = document.createElement('span');
                 controls.className = 'lock-controls';
 
-                const pidLockCb = document.createElement('input');
-                pidLockCb.type = 'checkbox';
-                pidLockCb.checked = selection.mode === 'pid' || selection.mode === 'pid+name';
-                pidLockCb.title = 'PID lock';
-                controls.appendChild(pidLockCb);
+                const modeToValue = { 'pid': 0, 'name': 1, 'pid+name': 2 };
+                const valueToMode = ['pid', 'name', 'pid+name'];
 
-                const nameLockCb = document.createElement('input');
-                nameLockCb.type = 'checkbox';
-                nameLockCb.checked = selection.mode === 'name' || selection.mode === 'pid+name';
-                nameLockCb.title = 'Name lock';
-                controls.appendChild(nameLockCb);
+                const sliderWrapper = document.createElement('div');
+                sliderWrapper.className = 'lock-slider-wrapper';
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.min = '0';
+                slider.max = '2';
+                slider.step = '1';
+                slider.value = String(modeToValue[selection.mode]);
+                slider.title = 'Lock mode';
+                slider.className = 'lock-slider';
+                sliderWrapper.appendChild(slider);
+
+                const sliderLabels = document.createElement('div');
+                sliderLabels.className = 'lock-slider-labels';
+                const activeLabelIndex = modeToValue[selection.mode];
+                ['PID', 'Name', 'PID+Name'].forEach(function (text, index) {
+                    const labelSpan = document.createElement('span');
+                    labelSpan.textContent = text;
+                    if (index === activeLabelIndex) {
+                        labelSpan.className = 'active';
+                    }
+                    labelSpan.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        slider.value = String(index);
+                        slider.dispatchEvent(new Event('change'));
+                    });
+                    sliderLabels.appendChild(labelSpan);
+                });
+                sliderWrapper.appendChild(sliderLabels);
+
+                controls.appendChild(sliderWrapper);
 
                 li.appendChild(controls);
 
-                function updateMode() {
-                    if (!pidLockCb.checked && !nameLockCb.checked) {
-                        pidLockCb.checked = true;
-                    }
-                    const newMode = pidLockCb.checked && nameLockCb.checked ? 'pid+name' : (nameLockCb.checked ? 'name' : 'pid');
-                    const newSelection = { pid: selection.pid, name: selection.name, mode: newMode };
+                slider.addEventListener('change', function () {
+                    const mode = valueToMode[Number(slider.value)];
+                    const newSelection = { pid: selection.pid, name: selection.name, mode: mode };
                     const newKey = getSelectionKey(newSelection);
                     pendingProcessSelections.delete(key);
                     pendingProcessSelections.set(newKey, newSelection);
                     renderProcessList();
-                }
-
-                pidLockCb.addEventListener('change', updateMode);
-                nameLockCb.addEventListener('change', updateMode);
-                pidLockCb.addEventListener('click', function (e) { e.stopPropagation(); });
-                nameLockCb.addEventListener('click', function (e) { e.stopPropagation(); });
+                });
+                slider.addEventListener('click', function (e) { e.stopPropagation(); });
+                controls.addEventListener('click', function (e) { e.stopPropagation(); });
 
                 li.addEventListener('click', function () {
                     pendingProcessSelections.delete(key);
@@ -1268,6 +1370,10 @@
         <div class="app-drawer-body">
             <div id="selectedProcessSection" class="process-section">
                 <h4>Selected</h4>
+                <div id="selectedProcessHeader" class="selected-process-header">
+                    <span class="process-col">Process</span>
+                    <span class="lock-mode-col">Lock mode</span>
+                </div>
                 <ul id="selectedProcessList" class="process-list app-list"></ul>
             </div>
             <div id="availableProcessSection" class="process-section">
