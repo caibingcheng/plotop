@@ -631,6 +631,13 @@ function updateAllCharts(extended_data, x_axis_labels) {
         });
 
         if (live_process) {
+            const currentInstanceKey = live_process.starttime ? `${live_process.pid}:${live_process.starttime}` : String(live_process.pid);
+            if (process_chart.instanceKey !== undefined && process_chart.instanceKey !== currentInstanceKey) {
+                process_chart.thread_cpu.data.datasets = [];
+                process_chart.restartedUntil = Date.now() + 5000;
+            }
+            process_chart.instanceKey = currentInstanceKey;
+
             live_process.threads.forEach(thread => {
                 const thread_label = `Thread[${thread.priority}] ${thread.tid}`;
                 if (!process_chart.thread_cpu.data.datasets.some(d => d.label === thread_label)) {
@@ -710,7 +717,8 @@ function updateAllCharts(extended_data, x_axis_labels) {
             if (!wrapper) return;
             const title_el = wrapper.querySelector('.chart-title');
             if (!title_el) return;
-            const desired_title = `[${process_chart.title}] ${suffixes[index]}` + (is_exited ? ' [exited]' : '');
+            const is_restarted = index === 2 && process_chart.restartedUntil && Date.now() < process_chart.restartedUntil;
+            const desired_title = `[${process_chart.title}] ${suffixes[index]}` + (is_exited ? ' [exited]' : '') + (is_restarted ? ' [restarted]' : '');
             if (title_el.textContent !== desired_title) {
                 title_el.textContent = desired_title;
             }
@@ -802,6 +810,14 @@ function appendAllChartsData(newItem) {
         const live_process = findProcessForSelection(newItem, selection);
         let needsThreadRebuild = false;
         if (live_process) {
+            const currentInstanceKey = live_process.starttime ? `${live_process.pid}:${live_process.starttime}` : String(live_process.pid);
+            if (process_chart.instanceKey !== undefined && process_chart.instanceKey !== currentInstanceKey) {
+                process_chart.thread_cpu.data.datasets = [];
+                process_chart.restartedUntil = Date.now() + 5000;
+                needsThreadRebuild = true;
+            }
+            process_chart.instanceKey = currentInstanceKey;
+
             live_process.threads.forEach(thread => {
                 const thread_label = `Thread[${thread.priority}] ${thread.tid}`;
                 if (!process_chart.thread_cpu.data.datasets.some(d => d.label === thread_label)) {
@@ -1256,6 +1272,7 @@ function initProcessCharts(metrics) {
         const process_id = currentProcess ? currentProcess.pid : (selection.pid || 0);
         const process_name = currentProcess ? currentProcess.name : (findProcessNameByPid(process_id) || selection.name || 'unknown');
         const process_threads = currentProcess ? currentProcess.threads : [];
+        const initialInstanceKey = currentProcess ? (currentProcess.starttime ? `${currentProcess.pid}:${currentProcess.starttime}` : String(currentProcess.pid)) : null;
 
         if (!process_charts[key]) {
             const chart_id_prefix = key.replace(/[^a-zA-Z0-9]/g, '_');
@@ -1367,7 +1384,9 @@ function initProcessCharts(metrics) {
                 thread_cpu_stats_id: thread_cpu_stats_id,
                 thread_cpu_wrapper: thread_cpu_wrapper,
                 title: process_display,
-                selection: selection
+                selection: selection,
+                instanceKey: initialInstanceKey,
+                restartedUntil: 0
             };
         }
     }

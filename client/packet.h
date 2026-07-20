@@ -18,6 +18,7 @@ struct Thread {
 struct Process {
   int32_t pid;
   std::string name;
+  uint64_t starttime;
   uint64_t memory;
   uint64_t cpu_user;
   uint64_t cpu_system;
@@ -47,6 +48,7 @@ inline Jsonify &to_jsonify(Jsonify &jsonify, const Thread &thread) {
 inline Jsonify &to_jsonify(Jsonify &jsonify, const Process &process) {
   jsonify["pid"] = process.pid;
   jsonify["name"] = process.name;
+  jsonify["starttime"] = process.starttime;
   jsonify["memory"] = process.memory;
   jsonify["cpu_user"] = process.cpu_user;
   jsonify["cpu_system"] = process.cpu_system;

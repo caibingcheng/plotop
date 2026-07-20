@@ -274,11 +274,15 @@
                     let process = data.processes[i];
                     let pid = process.pid;
                     let name = process.name;
-                    for (let j = 0; j < this.prev_raw.processes.length; j++) {
-                        if (pid === this.prev_raw.processes[j].pid &&
-                            name === this.prev_raw.processes[j].name) {
-                            let prev_process = this.prev_raw.processes[j];
-                            let process_cpu_total = process.cpu_user + process.cpu_system;
+                for (let j = 0; j < this.prev_raw.processes.length; j++) {
+                    if (pid === this.prev_raw.processes[j].pid &&
+                        name === this.prev_raw.processes[j].name) {
+                        let prev_process = this.prev_raw.processes[j];
+                        let has_starttime = process.starttime !== undefined && prev_process.starttime !== undefined;
+                        if (has_starttime && process.starttime !== prev_process.starttime) {
+                            break;
+                        }
+                        let process_cpu_total = process.cpu_user + process.cpu_system;
                             let prev_process_cpu_total = prev_process.cpu_user + prev_process.cpu_system;
                             let process_cpu_cost = process_cpu_total - prev_process_cpu_total;
                             let summary_process_cpu_usage = process_cpu_cost / cpu_cost * 100;
@@ -317,6 +321,7 @@
                             processes.push({
                                 pid: pid,
                                 name: name,
+                                starttime: process.starttime,
                                 cpu_usage: summary_process_cpu_usage,
                                 cpu_user: summary_process_cpu_user,
                                 cpu_system: summary_process_cpu_system,
