@@ -3,6 +3,7 @@ import * as http from 'http';
 import * as path from 'path';
 import { Server as SocketIoServer } from 'socket.io';
 import { clients } from './store';
+import { ProcessSelection, resolveSelectionPids } from './process-selection';
 
 export interface HttpServerInfo {
   httpServer: http.Server;
@@ -74,13 +75,26 @@ export async function startHttpServer(host: string, preferredPort: number, rende
 
     socket.on('apply_filter', (message) => {
       const ip = message?.ip;
-      const pids = message?.pids || [];
       if (!ip) return;
       const client = clients.get(ip);
       if (!client) return;
-      client.filterPids = pids;
-      client.outbound.put(JSON.stringify({ type: 'filter', patterns: [], pids }) + '\n');
-      console.log(`Sent filter to ${ip}: ${pids}`);
+
+      let selections: ProcessSelection[] = [];
+      if (Array.isArray(message?.selections)) {
+        selections = message.selections
+          .filter((s: any) => s && typeof s.pid === 'number' && typeof s.name === 'string' &&
+            ['pid', 'name', 'pid+name'].includes(s.mode))
+          .map((s: any) => ({ pid: s.pid, name: s.name, mode: s.mode }));
+      } else if (Array.isArray(message?.pids)) {
+        selections = message.pids
+          .filter((pid: any) => typeof pid === 'number')
+          .map((pid: number) => ({ pid, name: '', mode: 'pid' as const }));
+      }
+
+      client.filterSelections = selections;
+      client.filterPids = resolveSelectionPids(selections, client.lastProcessList);
+      client.outbound.put(JSON.stringify({ type: 'filter', patterns: [], pids: client.filterPids }) + '\n');
+      console.log(`Sent filter to ${ip}: ${client.filterPids}`);
     });
 
     socket.on('clear_data', (message) => {

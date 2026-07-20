@@ -39,8 +39,106 @@
             font-style: italic;
         }
 
-        .stale-process label span {
-            opacity: 0.85;
+        .lock-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 180px;
+            margin-left: auto;
+        }
+
+        .lock-slider-wrapper {
+            width: 100%;
+            padding: 0 24px;
+            box-sizing: border-box;
+        }
+
+        .lock-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--border-color);
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .lock-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            cursor: pointer;
+        }
+
+        .lock-slider-labels {
+            position: relative;
+            width: 100%;
+            height: 20px;
+            margin-top: 4px;
+        }
+
+        .lock-slider-labels span {
+            position: absolute;
+            top: 0;
+            transform: translateX(-50%);
+            padding: 2px 6px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .lock-slider-labels span:nth-child(1) { left: 0%; }
+        .lock-slider-labels span:nth-child(2) { left: 50%; }
+        .lock-slider-labels span:nth-child(3) { left: 100%; }
+
+        .lock-slider-labels span.active {
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+
+        .lock-slider-labels span:hover {
+            color: var(--text-primary);
+        }
+
+        .selected-process-header {
+            display: flex;
+            align-items: center;
+            padding: 4px 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .selected-process-header .process-col {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .selected-process-header .lock-mode-col {
+            width: 180px;
+            text-align: center;
+        }
+
+        #selectedProcessList .app-list-item > label {
+            min-width: 0;
+        }
+
+        #selectedProcessList .app-list-item > label span {
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #filter-panel {
+            width: 480px;
         }
 
         #content {
@@ -62,6 +160,16 @@
             border-radius: 3px;
             font-family: monospace;
         }
+
+        .client-offline-banner {
+            display: none;
+            background-color: #fff3cd;
+            color: #856404;
+            border-bottom: 1px solid #ffeeba;
+            padding: 6px 16px;
+            font-size: 12px;
+            text-align: center;
+        }
     </style>
     <script src="/vendor/socket.io.js"></script>
     <script src="/vendor/chart.umd.js"></script>
@@ -74,6 +182,13 @@
             prev_raw: null,
             duration: 60,
             add(data) {
+                if (data && Array.isArray(data.processes)) {
+                    data.processes.forEach(function (p) {
+                        if (p && typeof p.name === 'string' && p.name.length >= 2 && p.name.charAt(0) === '(' && p.name.charAt(p.name.length - 1) === ')') {
+                            p.name = p.name.slice(1, -1);
+                        }
+                    });
+                }
                 if (this.prev_raw === null) {
                     this.prev_raw = data;
                     return;
@@ -136,6 +251,11 @@
 
                 let summary_cpu_usage = (cpu_cost - (cpu_idle[0] - prev_cpu_idle[0])) / cpu_cost * 100;
                 let summary_cpu_idle = (cpu_idle[0] - prev_cpu_idle[0]) / cpu_cost * 100;
+                let summary_cpu_user = (cpu_user[0] - prev_cpu_user[0]) / cpu_cost * 100;
+                let summary_cpu_system = (cpu_system[0] - prev_cpu_system[0]) / cpu_cost * 100;
+                let summary_cpu_iowait = (cpu_iowait[0] - prev_cpu_iowait[0]) / cpu_cost * 100;
+                let summary_cpu_irq = (cpu_irq[0] - prev_cpu_irq[0]) / cpu_cost * 100;
+                let summary_cpu_softirq = (cpu_softirq[0] - prev_cpu_softirq[0]) / cpu_cost * 100;
 
                 let cpu_cores = [];
                 for (let i = 1; i < cpu_user.length; i++) {
@@ -144,6 +264,8 @@
                         core: i,
                         cpu_usage: (core_cost - (cpu_idle[i] - prev_cpu_idle[i])) / core_cost * 100,
                         cpu_idle: (cpu_idle[i] - prev_cpu_idle[i]) / core_cost * 100,
+                        cpu_user: (cpu_user[i] - prev_cpu_user[i]) / core_cost * 100,
+                        cpu_system: (cpu_system[i] - prev_cpu_system[i]) / core_cost * 100,
                     });
                 }
 
@@ -160,6 +282,10 @@
                             let prev_process_cpu_total = prev_process.cpu_user + prev_process.cpu_system;
                             let process_cpu_cost = process_cpu_total - prev_process_cpu_total;
                             let summary_process_cpu_usage = process_cpu_cost / cpu_cost * 100;
+                            let process_cpu_user_cost = process.cpu_user - prev_process.cpu_user;
+                            let process_cpu_system_cost = process.cpu_system - prev_process.cpu_system;
+                            let summary_process_cpu_user = process_cpu_user_cost / cpu_cost * 100;
+                            let summary_process_cpu_system = process_cpu_system_cost / cpu_cost * 100;
 
                             let threads = [];
                             for (let k = 0; k < process.threads.length; k++) {
@@ -171,11 +297,17 @@
                                         let prev_thread_cpu_total = prev_process.threads[l].cpu_user + prev_process.threads[l].cpu_system;
                                         let thread_cpu_cost = thread_cpu_total - prev_thread_cpu_total;
                                         let summary_thread_cpu_usage = thread_cpu_cost / cpu_cost * 100 * cpu_cores.length;
+                                        let thread_cpu_user_cost = thread.cpu_user - prev_process.threads[l].cpu_user;
+                                        let thread_cpu_system_cost = thread.cpu_system - prev_process.threads[l].cpu_system;
+                                        let summary_thread_cpu_user = thread_cpu_user_cost / cpu_cost * 100 * cpu_cores.length;
+                                        let summary_thread_cpu_system = thread_cpu_system_cost / cpu_cost * 100 * cpu_cores.length;
 
                                         threads.push({
                                             tid: thread_tid,
                                             priority: thread.priority,
                                             cpu_usage: summary_thread_cpu_usage,
+                                            cpu_user: summary_thread_cpu_user,
+                                            cpu_system: summary_thread_cpu_system,
                                         });
                                         break;
                                     }
@@ -186,6 +318,8 @@
                                 pid: pid,
                                 name: name,
                                 cpu_usage: summary_process_cpu_usage,
+                                cpu_user: summary_process_cpu_user,
+                                cpu_system: summary_process_cpu_system,
                                 memory: process.memory / 1024,
                                 threads: threads,
                             });
@@ -201,6 +335,11 @@
                     total_memory: data.total_memory / 1024,
                     cpu_usage: summary_cpu_usage,
                     cpu_idle: summary_cpu_idle,
+                    cpu_user: summary_cpu_user,
+                    cpu_system: summary_cpu_system,
+                    cpu_iowait: summary_cpu_iowait,
+                    cpu_irq: summary_cpu_irq,
+                    cpu_softirq: summary_cpu_softirq,
                     cpu_cores: cpu_cores,
                     processes: processes,
                 };
@@ -247,7 +386,8 @@
 
         var system_charts = {};
         var process_charts = {};
-        var selectedPids = new Set();
+        var appliedProcessSelections = new Map();
+        var pendingProcessSelections = new Map();
         var selectedSystemMetrics = ["used_memory", "cpu_usage", "cpu_cores"];
         var colorOverrides = {};
         var currentIp = '';
@@ -274,6 +414,7 @@
         }
 
         const DURATION_STORAGE_PREFIX = 'plotop_duration_';
+
         function getDurationStorageKey(ip) {
             return DURATION_STORAGE_PREFIX + (ip || 'default');
         }
@@ -369,7 +510,7 @@
         function buildOfflineHtml(exportData, chartJsSrc, coreSrc, styles) {
             const dataJson = JSON.stringify(exportData.data);
             const metricsJson = JSON.stringify(exportData.selectedSystemMetrics);
-            const pidsJson = JSON.stringify(exportData.selectedPids);
+            const selectionsJson = JSON.stringify(exportData.processSelections || []);
             const colorOverridesJson = JSON.stringify(exportData.colorOverrides || {});
             const duration = exportData.duration;
             const ip = exportData.ip;
@@ -415,7 +556,14 @@
             parts.push('        data_storage.data.forEach(function(item) { item.timestamp = new Date(item.timestamp); });');
             parts.push('        var system_charts = {};');
             parts.push('        var process_charts = {};');
-            parts.push('        var selectedPids = new Set(' + pidsJson + ');');
+            parts.push('        var appliedProcessSelections = new Map();');
+            parts.push('        (function() {');
+            parts.push('            var selections = ' + selectionsJson + ';');
+            parts.push('            selections.forEach(function(sel) {');
+            parts.push('                var key = sel.mode === \'name\' ? \'name:\' + sel.name : (sel.mode === \'pid+name\' ? \'pid+name:\' + sel.pid + \':\' + sel.name : \'pid:\' + sel.pid);');
+            parts.push('                appliedProcessSelections.set(key, sel);');
+            parts.push('            });');
+            parts.push('        })();');
             parts.push('        var selectedSystemMetrics = ' + metricsJson + ';');
             parts.push('        var colorOverrides = ' + colorOverridesJson + ';');
             parts.push('        document.addEventListener("DOMContentLoaded", function() {');
@@ -452,7 +600,10 @@
                 timestamp: new Date().toISOString(),
                 duration: data_storage.duration,
                 selectedSystemMetrics: Array.from(selectedSystemMetrics),
-                selectedPids: Array.from(selectedPids),
+                processSelections: Array.from(appliedProcessSelections.values()).map(function(sel) {
+                    const key = sel.mode === 'name' ? 'name:' + sel.name : (sel.mode === 'pid+name' ? 'pid+name:' + sel.pid + ':' + sel.name : 'pid:' + sel.pid);
+                    return { ...sel, key };
+                }),
                 colorOverrides: { ...colorOverrides },
                 data: JSON.parse(JSON.stringify(data_storage.data))
             };
@@ -481,10 +632,48 @@
             var first_data_received = false;
             var after_clear = false;
             var is_paused = false;
+            var lastRenderTime = 0;
+            var refreshTimer = null;
+            var lastDataArrivalTime = 0;
+            var estimatedDataInterval = 0;
 
             if (!ip) {
                 alert('Missing IP parameter');
                 return;
+            }
+
+            function scheduleRefresh() {
+                if (is_paused) return;
+                const now = Date.now();
+                const arrivalDelta = lastDataArrivalTime ? now - lastDataArrivalTime : 0;
+                lastDataArrivalTime = now;
+                if (arrivalDelta > 0) {
+                    estimatedDataInterval = estimatedDataInterval === 0
+                        ? arrivalDelta
+                        : Math.round(estimatedDataInterval * 0.7 + arrivalDelta * 0.3);
+                }
+
+                if (refreshTimer) {
+                    clearTimeout(refreshTimer);
+                    refreshTimer = null;
+                }
+
+                const sinceLastRender = now - lastRenderTime;
+                const adaptiveInterval = Math.max(3000, estimatedDataInterval);
+                if (sinceLastRender >= adaptiveInterval) {
+                    refreshChartsForCurrentDuration();
+                    lastRenderTime = now;
+                    return;
+                }
+
+                const delay = adaptiveInterval - sinceLastRender;
+                refreshTimer = setTimeout(function () {
+                    if (!is_paused) {
+                        refreshChartsForCurrentDuration();
+                    }
+                    lastRenderTime = Date.now();
+                    refreshTimer = null;
+                }, delay);
             }
 
             function hideWaitingOverlay() {
@@ -514,13 +703,30 @@
                 subscribe();
             });
 
+            socket.on('new_ip', function (data) {
+                if (data.ip !== ip) return;
+                var banner = document.getElementById('offlineBanner');
+                if (!banner) return;
+                if (data.alive) {
+                    banner.style.display = 'none';
+                    banner.textContent = '';
+                } else {
+                    banner.style.display = 'block';
+                    banner.textContent = 'Client ' + data.ip + ' disconnected. Waiting for reconnection...';
+                }
+            });
+
             function needsProcessChartUpdate() {
-                const metrics = getMetricsValue().split(',').map(m => m.trim()).filter(m => m);
-                const expectedPids = metrics.filter(m => m.startsWith('pid=')).map(m => parseInt(m.split('=')[1], 10));
                 const lastData = data_storage.last();
                 if (!lastData) return false;
-                const currentPids = lastData.processes.map(p => p.pid);
-                return expectedPids.some(pid => currentPids.includes(pid) && !process_charts[pid]);
+                for (const sel of appliedProcessSelections.values()) {
+                    const key = getSelectionKey(sel);
+                    if (!process_charts[key]) {
+                        const currentPid = resolveCurrentPid(sel, lastData.processes);
+                        if (currentPid) return true;
+                    }
+                }
+                return false;
             }
 
             socket.on('new_data/' + ip, function (data) {
@@ -538,7 +744,7 @@
                     if (needsProcessChartUpdate()) {
                         updateChart();
                     } else {
-                        refreshChartsForCurrentDuration();
+                        scheduleRefresh();
                     }
                 }
 
@@ -597,18 +803,31 @@
                 selectedSystemMetrics.length = 0;
                 selectedSystemMetrics.push(...systemMetrics);
 
-                const pidMetrics = metrics.filter(m => m.startsWith('pid='));
-                selectedPids.clear();
-                pidMetrics.forEach(m => {
-                    const pid = parseInt(m.split('=')[1], 10);
-                    if (!isNaN(pid)) {
-                        selectedPids.add(pid);
+                appliedProcessSelections.clear();
+                metrics.forEach(m => {
+                    if (m.startsWith('pid=')) {
+                        const pid = parseInt(m.split('=')[1], 10);
+                        if (!isNaN(pid)) {
+                            appliedProcessSelections.set(`pid:${pid}`, { pid, name: '', mode: 'pid' });
+                        }
+                    } else if (m.startsWith('name=')) {
+                        const name = m.split('=').slice(1).join('=');
+                        if (name) {
+                            appliedProcessSelections.set(`name:${name}`, { pid: 0, name, mode: 'name' });
+                        }
+                    } else if (m.startsWith('pid+name=')) {
+                        const rest = m.split('=').slice(1).join('=');
+                        const [pidStr, name] = rest.split(':', 2);
+                        const pid = parseInt(pidStr, 10);
+                        if (!isNaN(pid) && name) {
+                            appliedProcessSelections.set(`pid+name:${pid}:${name}`, { pid, name, mode: 'pid+name' });
+                        }
                     }
                 });
 
                 closeMetricsModal();
                 updateChart();
-                socket.emit('apply_filter', { ip: ip, pids: Array.from(selectedPids) });
+                socket.emit('apply_filter', { ip: ip, selections: Array.from(appliedProcessSelections.values()) });
             }
 
             if (metricsInput) {
@@ -714,14 +933,10 @@
 
             let allProcesses = [];
             let currentSearchQuery = '';
-            let lastKnownProcessNames = {};
             let lastFilterStatus = null;
 
             socket.on('process_list/' + ip, function (msg) {
                 allProcesses = msg.processes || [];
-                allProcesses.forEach(function (process) {
-                    lastKnownProcessNames[process.pid] = process.name;
-                });
                 applySearch();
             });
 
@@ -729,12 +944,58 @@
                 renderProcessList();
             }
 
-            function createProcessListItem(pid, name, checked, isStale) {
+            function getSelectionKey(selection) {
+                if (selection.mode === 'name') return 'name:' + selection.name;
+                if (selection.mode === 'pid+name') return 'pid+name:' + selection.pid + ':' + selection.name;
+                return 'pid:' + selection.pid;
+            }
+
+            function resolveCurrentPid(selection, processList) {
+                if (!processList || !Array.isArray(processList)) return null;
+                switch (selection.mode) {
+                    case 'pid':
+                        return selection.pid;
+                    case 'name': {
+                        const byName = processList.filter(p => p && p.name === selection.name);
+                        if (byName.length === 0) return null;
+                        if (byName.length === 1) return byName[0].pid;
+                        if (selection.pid) {
+                            const byPid = byName.find(p => p.pid === selection.pid);
+                            if (byPid) return byPid.pid;
+                        }
+                        return null;
+                    }
+                    case 'pid+name': {
+                        const match = processList.find(p => p && p.pid === selection.pid && p.name === selection.name);
+                        return match ? match.pid : null;
+                    }
+                }
+                return null;
+            }
+
+            function isProcessSelected(pid, name) {
+                for (const sel of pendingProcessSelections.values()) {
+                    if (sel.mode === 'name' && sel.name === name) return true;
+                    if ((sel.mode === 'pid' || sel.mode === 'pid+name') && sel.pid === pid) return true;
+                }
+                return false;
+            }
+
+            function addPendingSelection(pid, name) {
+                const key = 'pid:' + pid;
+                if (!pendingProcessSelections.has(key)) {
+                    pendingProcessSelections.set(key, { pid, name, mode: 'pid' });
+                }
+            }
+
+            function createSelectedListItem(key, selection) {
                 const li = document.createElement('li');
                 li.className = 'app-list-item';
-                if (isStale) {
+                const currentPid = resolveCurrentPid(selection, allProcesses);
+                if (!currentPid) {
                     li.classList.add('stale-process');
                 }
+
                 const label = document.createElement('label');
                 label.style.pointerEvents = 'none';
                 label.style.display = 'flex';
@@ -744,30 +1005,102 @@
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
-                checkbox.checked = checked;
+                checkbox.checked = true;
                 checkbox.style.pointerEvents = 'none';
-
                 label.appendChild(checkbox);
 
                 const textSpan = document.createElement('span');
-                if (isStale) {
-                    const knownName = name ? name : 'unknown';
-                    textSpan.textContent = pid + ': ' + knownName + ' (is changed now)';
-                } else {
-                    textSpan.textContent = pid + ': ' + name;
+                textSpan.textContent = selection.pid + ': ' + selection.name;
+                if (!currentPid) {
+                    textSpan.textContent += ' (changed now)';
                 }
                 label.appendChild(textSpan);
                 li.appendChild(label);
 
-                li.addEventListener('click', function () {
-                    if (checkbox.checked) {
-                        selectedPids.delete(pid);
-                    } else {
-                        selectedPids.add(pid);
-                        if (!isStale && name) {
-                            lastKnownProcessNames[pid] = name;
-                        }
+                const controls = document.createElement('span');
+                controls.className = 'lock-controls';
+
+                const modeToValue = { 'pid': 0, 'name': 1, 'pid+name': 2 };
+                const valueToMode = ['pid', 'name', 'pid+name'];
+
+                const sliderWrapper = document.createElement('div');
+                sliderWrapper.className = 'lock-slider-wrapper';
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.min = '0';
+                slider.max = '2';
+                slider.step = '1';
+                slider.value = String(modeToValue[selection.mode]);
+                slider.title = 'Lock mode';
+                slider.className = 'lock-slider';
+                sliderWrapper.appendChild(slider);
+
+                const sliderLabels = document.createElement('div');
+                sliderLabels.className = 'lock-slider-labels';
+                const activeLabelIndex = modeToValue[selection.mode];
+                ['PID', 'Name', 'PID+Name'].forEach(function (text, index) {
+                    const labelSpan = document.createElement('span');
+                    labelSpan.textContent = text;
+                    if (index === activeLabelIndex) {
+                        labelSpan.className = 'active';
                     }
+                    labelSpan.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        slider.value = String(index);
+                        slider.dispatchEvent(new Event('change'));
+                    });
+                    sliderLabels.appendChild(labelSpan);
+                });
+                sliderWrapper.appendChild(sliderLabels);
+
+                controls.appendChild(sliderWrapper);
+
+                li.appendChild(controls);
+
+                slider.addEventListener('change', function () {
+                    const mode = valueToMode[Number(slider.value)];
+                    const newSelection = { pid: selection.pid, name: selection.name, mode: mode };
+                    const newKey = getSelectionKey(newSelection);
+                    pendingProcessSelections.delete(key);
+                    pendingProcessSelections.set(newKey, newSelection);
+                    renderProcessList();
+                });
+                slider.addEventListener('click', function (e) { e.stopPropagation(); });
+                controls.addEventListener('click', function (e) { e.stopPropagation(); });
+
+                li.addEventListener('click', function () {
+                    pendingProcessSelections.delete(key);
+                    renderProcessList();
+                });
+
+                return li;
+            }
+
+            function createAvailableListItem(pid, name) {
+                const li = document.createElement('li');
+                li.className = 'app-list-item';
+
+                const label = document.createElement('label');
+                label.style.pointerEvents = 'none';
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                label.style.flex = '1';
+                label.style.gap = '8px';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = false;
+                checkbox.style.pointerEvents = 'none';
+                label.appendChild(checkbox);
+
+                const textSpan = document.createElement('span');
+                textSpan.textContent = pid + ': ' + name;
+                label.appendChild(textSpan);
+                li.appendChild(label);
+
+                li.addEventListener('click', function () {
+                    addPendingSelection(pid, name);
                     renderProcessList();
                 });
 
@@ -784,23 +1117,19 @@
                 selectedList.innerHTML = '';
                 availableList.innerHTML = '';
 
-                const selectedPidsSorted = Array.from(selectedPids).sort(function (a, b) { return a - b; });
-                selectedPidsSorted.forEach(function (pid) {
-                    const process = allProcesses.find(function (p) { return p.pid === pid; });
-                    if (process) {
-                        selectedList.appendChild(createProcessListItem(process.pid, process.name, true, false));
-                    } else {
-                        selectedList.appendChild(createProcessListItem(pid, lastKnownProcessNames[pid], true, true));
-                    }
+                const selectedKeys = Array.from(pendingProcessSelections.keys()).sort();
+                selectedKeys.forEach(function (key) {
+                    const selection = pendingProcessSelections.get(key);
+                    selectedList.appendChild(createSelectedListItem(key, selection));
                 });
 
                 if (selectedSection) {
-                    selectedSection.style.display = selectedPids.size > 0 ? 'block' : 'none';
+                    selectedSection.style.display = selectedKeys.length > 0 ? 'block' : 'none';
                 }
 
                 const query = currentSearchQuery;
                 let available = allProcesses.filter(function (process) {
-                    return !selectedPids.has(process.pid);
+                    return !isProcessSelected(process.pid, process.name);
                 });
                 if (query) {
                     available = available.filter(function (process) {
@@ -809,7 +1138,7 @@
                 }
                 available.sort(function (a, b) { return a.pid - b.pid; });
                 available.forEach(function (process) {
-                    availableList.appendChild(createProcessListItem(process.pid, process.name, false, false));
+                    availableList.appendChild(createAvailableListItem(process.pid, process.name));
                 });
 
                 if (availableSection) {
@@ -836,13 +1165,11 @@
                 const filterStatus = document.getElementById('filterStatus');
                 if (!filterStatus) return;
 
-                const currentPidSet = new Set(allProcesses.map(function (process) { return process.pid; }));
                 let staleCount = 0;
-                selectedPids.forEach(function (pid) {
-                    if (!currentPidSet.has(pid)) {
-                        staleCount++;
-                    }
-                });
+                for (const sel of pendingProcessSelections.values()) {
+                    const currentPid = resolveCurrentPid(sel, allProcesses);
+                    if (!currentPid) staleCount++;
+                }
 
                 let text = '';
                 if (lastFilterStatus) {
@@ -851,12 +1178,12 @@
                     } else {
                         text = 'Filter applied, but none of the selected processes are currently running.';
                     }
-                } else if (selectedPids.size > 0) {
-                    text = selectedPids.size + ' process(es) selected.';
+                } else if (pendingProcessSelections.size > 0) {
+                    text = pendingProcessSelections.size + ' process(es) selected.';
                 }
 
                 if (staleCount > 0) {
-                    text += (text ? ' ' : '') + staleCount + ' selected PID' + (staleCount > 1 ? 's are' : ' is') + ' changed now.';
+                    text += (text ? ' ' : '') + staleCount + ' selected process' + (staleCount > 1 ? 'es are' : ' is') + ' changed now.';
                 }
 
                 if (!text) {
@@ -873,6 +1200,8 @@
             const applyFilterBtn = document.getElementById('applyFilterBtn');
 
             function openFilterPanel() {
+                pendingProcessSelections = new Map(appliedProcessSelections);
+                renderProcessList();
                 if (filterPanel) {
                     filterPanel.classList.add('visible');
                 }
@@ -895,7 +1224,11 @@
             }
 
             if (cancelFilterBtn) {
-                cancelFilterBtn.addEventListener('click', closeFilterPanel);
+                cancelFilterBtn.addEventListener('click', function () {
+                    pendingProcessSelections = new Map(appliedProcessSelections);
+                    renderProcessList();
+                    closeFilterPanel();
+                });
             }
 
             if (filterPanelOverlay) {
@@ -906,8 +1239,30 @@
 
             if (applyFilterBtn) {
                 applyFilterBtn.addEventListener('click', function () {
-                    const selected = Array.from(selectedPids);
-                    socket.emit('apply_filter', { ip: ip, pids: selected });
+                    const invalidNameLocks = [];
+                    for (const sel of pendingProcessSelections.values()) {
+                        if (sel.mode === 'name') {
+                            const matches = allProcesses.filter(p => p && p.name === sel.name);
+                            if (matches.length === 0) {
+                                invalidNameLocks.push({ name: sel.name, count: 0 });
+                            } else if (matches.length === 1) {
+                                // ok
+                            } else if (sel.pid && matches.some(p => p.pid === sel.pid)) {
+                                // ok, original pid disambiguates
+                            } else {
+                                invalidNameLocks.push({ name: sel.name, count: matches.length });
+                            }
+                        }
+                    }
+                    if (invalidNameLocks.length > 0) {
+                        const details = invalidNameLocks.map(x => x.name + '(' + (x.count === 0 ? 'not found' : x.count + ' matches') + ')').join(', ');
+                        alert('Name lock requires exactly one match: ' + details);
+                        return;
+                    }
+
+                    appliedProcessSelections = new Map(pendingProcessSelections);
+                    const selections = Array.from(appliedProcessSelections.values());
+                    socket.emit('apply_filter', { ip: ip, selections: selections });
                     updateChart();
                     closeFilterPanel();
                 });
@@ -916,6 +1271,15 @@
             document.getElementById("pauseChart").addEventListener("click", function () {
                 is_paused = !is_paused;
                 this.textContent = is_paused ? "Resume Chart" : "Pause Chart";
+                if (is_paused) {
+                    if (refreshTimer) {
+                        clearTimeout(refreshTimer);
+                        refreshTimer = null;
+                    }
+                } else {
+                    lastRenderTime = 0;
+                    scheduleRefresh();
+                }
             });
 
             const goHomeBtn = document.getElementById("goHome");
@@ -956,6 +1320,7 @@
 </head>
 
 <body>
+    <div id="offlineBanner" class="client-offline-banner"></div>
     <div id="config" class="app-toolbar">
         <div class="app-toolbar-group" style="margin-right: auto;">
             <button id="jumpMenuToggle" class="app-button">Charts</button>
@@ -1005,6 +1370,10 @@
         <div class="app-drawer-body">
             <div id="selectedProcessSection" class="process-section">
                 <h4>Selected</h4>
+                <div id="selectedProcessHeader" class="selected-process-header">
+                    <span class="process-col">Process</span>
+                    <span class="lock-mode-col">Lock mode</span>
+                </div>
                 <ul id="selectedProcessList" class="process-list app-list"></ul>
             </div>
             <div id="availableProcessSection" class="process-section">

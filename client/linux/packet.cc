@@ -302,6 +302,9 @@ class Packet::ImplPacket {
         }
 
         std::string name(stat.comm);
+        if (name.size() >= 2 && name.front() == '(' && name.back() == ')') {
+          name = name.substr(1, name.size() - 2);
+        }
         auto pid_match = [&](int32_t filter_pid) { return pid == filter_pid; };
         const bool match = !pids.empty() && std::any_of(pids.begin(), pids.end(), pid_match);
         if (!match) {

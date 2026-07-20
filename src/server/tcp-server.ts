@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Server as SocketIoServer } from 'socket.io';
 import { clients, getOrCreateClient, ClientState, AsyncMessageQueue } from './store';
+import { resolveSelectionPids, arraysEqual } from './process-selection';
 
 function isIgnorableSocketError(err: any): boolean {
   return err && (err.code === 'EPIPE' || err.code === 'ECONNRESET');
@@ -33,14 +34,15 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       client.socket = clientSocket;
       client.outbound = new AsyncMessageQueue();
       client.lastSeen = new Date();
-      client.alive = true;
+      setClientAlive(clientIp, true, io);
       client.hasProcessList = false;
       client.lastProcessList = {};
       client.dataSequence = (client.dataSequence || 0) + 1;
       client.data = [];
       client.subscribed = { count: 10, lastTime: new Date() };
 
-      if (client.filterPids && client.filterPids.length > 0) {
+      if (client.filterSelections && client.filterSelections.length > 0) {
+        client.filterPids = resolveSelectionPids(client.filterSelections, client.lastProcessList);
         client.outbound.put(JSON.stringify({ type: 'filter', patterns: [], pids: client.filterPids }) + '\n');
         console.log(`Re-sent filter to ${clientIp}: ${client.filterPids}`);
       }
@@ -51,7 +53,7 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       const filename = path.join('log', `plotop_${timestamp}_${clientIp}.txt`);
 
       const readerPromise = clientReader(clientSocket, clientIp, filename, io, client.outbound);
-      const writerPromise = clientWriter(clientSocket, clientIp);
+      const writerPromise = clientWriter(clientSocket, clientIp, io);
 
       Promise.all([readerPromise, writerPromise]).then(() => {
         client.alive = false;
@@ -156,6 +158,24 @@ function safeClose(socket: net.Socket) {
   }
 }
 
+function setClientAlive(ip: string, alive: boolean, io: SocketIoServer) {
+  const client = clients.get(ip);
+  if (client) {
+    client.alive = alive;
+    io.emit('new_ip', { ip, alive });
+  }
+}
+
+function reapplyFilterIfChanged(ip: string, client: ClientState) {
+  if (!client.filterSelections || client.filterSelections.length === 0) return;
+  const newPids = resolveSelectionPids(client.filterSelections, client.lastProcessList);
+  const oldPids = client.filterPids || [];
+  if (arraysEqual(newPids, oldPids)) return;
+  client.filterPids = newPids;
+  client.outbound.put(JSON.stringify({ type: 'filter', patterns: [], pids: newPids }) + '\n');
+  console.log(`Re-sent filter to ${ip}: ${newPids}`);
+}
+
 async function clientReader(
   clientSocket: net.Socket,
   ip: string,
@@ -210,11 +230,12 @@ async function clientReader(
             client.hasProcessList = true;
             client.lastProcessList = data;
             io.emit(`process_list/${ip}`, data);
+            reapplyFilterIfChanged(ip, client);
             break;
           case 'filter_ack':
             io.emit(`filter_status/${ip}`, {
               matched_count: data.matched_count || 0,
-              requested_count: client.filterPids.length,
+              requested_count: client.filterSelections.length,
             });
             break;
           default:
@@ -225,8 +246,7 @@ async function clientReader(
   } catch (e) {
     console.error(`Reader error for ${ip}:`, e);
   } finally {
-    const client = clients.get(ip);
-    if (client) client.alive = false;
+    setClientAlive(ip, false, io);
     outbound.put(null);
     safeClose(clientSocket);
   }
@@ -309,7 +329,7 @@ function writeDataToFile(filename: string, data: string) {
   fs.appendFileSync(filename, data);
 }
 
-async function clientWriter(clientSocket: net.Socket, ip: string) {
+async function clientWriter(clientSocket: net.Socket, ip: string, io: SocketIoServer) {
   const heartbeatInterval = 30000;
   let nextHeartbeat = Date.now() + heartbeatInterval;
 
@@ -341,8 +361,7 @@ async function clientWriter(clientSocket: net.Socket, ip: string) {
   } catch (e) {
     console.error(`Writer error for ${ip}:`, e);
   } finally {
-    const client = clients.get(ip);
-    if (client) client.alive = false;
+    setClientAlive(ip, false, io);
     safeClose(clientSocket);
   }
 }
