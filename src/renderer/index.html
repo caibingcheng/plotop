@@ -105,7 +105,14 @@
             var socket = io.connect('/');
             var displayedIps = new Set();
             var offlineIps = new Set();
+            var versionData = {};
+            var serverInfo = {};
+            var selectedLocalIp = '';
+
             var offlineBanner = document.getElementById("offlineBanner");
+            var tcpPortInput = document.getElementById("tcpPortInput");
+            var tcpPortStatus = document.getElementById("tcpPortStatus");
+            var ipList = document.getElementById("ipList");
 
             function updateOfflineBanner() {
                 if (!offlineBanner) return;
@@ -139,13 +146,22 @@
                 text.className = "ip-text";
                 text.innerHTML = ip;
 
+                var badge = document.createElement("span");
+                badge.className = "version-badge";
+                badge.dataset.ip = ip;
+                badge.innerHTML = '';
+                item.badgeEl = badge;
+
                 var arrow = document.createElement("span");
                 arrow.className = "ip-arrow";
                 arrow.innerHTML = "›";
 
                 item.appendChild(dot);
                 item.appendChild(text);
+                item.appendChild(badge);
                 item.appendChild(arrow);
+
+                updateBadgeForIp(ip, badge);
                 return item;
             }
 
@@ -163,6 +179,48 @@
                 }
             }
 
+            function updateBadgeForIp(ip, badgeEl) {
+                if (!badgeEl) {
+                    var found = document.querySelector('.version-badge[data-ip="' + ip + '"]');
+                    if (!found) return;
+                    badgeEl = found;
+                }
+                var vd = versionData[ip];
+                if (!vd) {
+                    badgeEl.innerHTML = '';
+                    return;
+                }
+                var label = vd.clientVersion ? 'v' + vd.clientVersion + ' (p' + (vd.protocolVersion || '?') + ', ' + (vd.arch || '?') + ')' : '';
+                var statusText = getStatusText(vd.status);
+                var statusClass = 'status-' + (vd.status || 'unknown');
+                var html = '';
+                if (label) {
+                    html += '<span class="version-label">' + label + '</span>';
+                }
+                html += '<span class="version-status ' + statusClass + '">' + statusText + '</span>';
+                if (vd.status === 'outdated' && vd.latestReleaseUrl) {
+                    html += ' <a class="version-badge-link" href="' + vd.latestReleaseUrl + '" target="_blank">下载新版本</a>';
+                }
+                if (vd.status === 'break-change') {
+                    html += ' <span class="version-badge-link">协议不兼容，请升级 client</span>';
+                }
+                if (vd.status === 'newer-than-server') {
+                    html += ' <span class="version-badge-link">server 可升级</span>';
+                }
+                badgeEl.innerHTML = html;
+            }
+
+            function getStatusText(status) {
+                switch (status) {
+                    case 'compatible': return '正常';
+                    case 'unknown': return '版本未知';
+                    case 'outdated': return '可升级';
+                    case 'break-change': return '不兼容';
+                    case 'newer-than-server': return 'server 可升级';
+                    default: return '';
+                }
+            }
+
             socket.on('new_ip', function (data) {
                 hideEmptyHint();
                 var ip = data.ip;
@@ -177,32 +235,156 @@
                     updateIpItem(ip, data.alive);
                 } else {
                     displayedIps.add(ip);
-                    var ipList = document.getElementById("ipList");
                     if (ipList) {
                         ipList.appendChild(createIpItem(ip, data.alive));
                     }
                 }
             });
 
-            var tcpPortInput = document.getElementById("tcpPortInput");
-            var tcpPortStatus = document.getElementById("tcpPortStatus");
-            var clientCommandEl = document.getElementById("clientCommand");
+            socket.on('client_info', function (info) {
+                if (!info.ip) return;
+                versionData[info.ip] = {
+                    clientVersion: info.clientVersion,
+                    protocolVersion: info.protocolVersion,
+                    arch: info.arch,
+                    status: info.versionStatus,
+                    latestReleaseUrl: info.latestReleaseUrl,
+                };
+                updateBadgeForIp(info.ip);
+                var items = document.getElementsByClassName("app-list-item");
+                for (var i = 0; i < items.length; i++) {
+                    var text = items[i].querySelector(".ip-text");
+                    if (text && text.innerHTML === info.ip) {
+                        var badge = items[i].querySelector(".version-badge");
+                        if (badge) updateBadgeForIp(info.ip, badge);
+                        return;
+                    }
+                }
+            });
 
-            function updateClientCommand(port) {
-                if (clientCommandEl) {
-                    clientCommandEl.textContent = './plotop -i <server_ip> -p ' + port + ' -d 1';
+            socket.emit('config:get_server_info');
+            socket.on('config:server_info', function (info) {
+                serverInfo = info;
+                if (info.version) {
+                    var titleEl = document.querySelector('.toolbar-title');
+                    if (titleEl) {
+                        titleEl.innerHTML = 'Plotop <span class="subtitle">v' + info.version + '</span>';
+                    }
+                }
+                populateIpPills(info.localIps);
+                updateWizardCommands();
+                if (info.tcpPort) {
+                    var helpPort = document.getElementById('helpPort');
+                    var helpPort2 = document.getElementById('helpPort2');
+                    if (helpPort) helpPort.textContent = info.tcpPort;
+                    if (helpPort2) helpPort2.textContent = info.tcpPort;
+                }
+                if (info.latestReleaseUrl) {
+                    var releaseLink = document.getElementById('releaseLink');
+                    if (releaseLink) {
+                        releaseLink.href = info.latestReleaseUrl;
+                    }
+                }
+            });
+
+            function populateIpPills(ips) {
+                var container = document.getElementById('localIps');
+                if (!container) return;
+                container.innerHTML = '';
+                if (!ips || ips.length === 0) {
+                    container.innerHTML = '<span class="hint-detail">未检测到非内网 IP</span>';
+                    return;
+                }
+                ips.forEach(function (ip) {
+                    var pill = document.createElement('button');
+                    pill.className = 'ip-pill';
+                    pill.textContent = ip;
+                    pill.dataset.ip = ip;
+                    pill.addEventListener('click', function () {
+                        container.querySelectorAll('.ip-pill').forEach(function (p) { p.classList.remove('selected'); });
+                        pill.classList.add('selected');
+                        selectedLocalIp = ip;
+                        updateWizardCommands();
+                    });
+                    container.appendChild(pill);
+                });
+                if (ips.length > 0) {
+                    var first = container.querySelector('.ip-pill');
+                    if (first) {
+                        first.classList.add('selected');
+                        selectedLocalIp = ips[0];
+                        updateWizardCommands();
+                    }
                 }
             }
 
+            function updateWizardCommands() {
+                if (!selectedLocalIp) return;
+                var port = serverInfo.tcpPort || 28081;
+                var arch = document.getElementById('archSelect') ? document.getElementById('archSelect').value : 'x86_64';
+                var tag = serverInfo.latestVersion ? 'v' + serverInfo.latestVersion : 'latest';
+                var releaseUrl = serverInfo.latestReleaseUrl || 'https://github.com/caibingcheng/plotop/releases/latest';
+                var downloadUrl = releaseUrl.replace('/releases/tag/', '/releases/download/') + '/plotop-' + tag + '-' + arch + '.zip';
+                var downloadCmd = 'wget ' + downloadUrl + ' -O plotop.zip && unzip plotop.zip && chmod +x plotop && ./plotop -i ' + selectedLocalIp + ' -p ' + port + ' -d 1';
+                var sourceCmd = 'git clone https://github.com/caibingcheng/plotop.git && cd plotop && make && ./plotop -i ' + selectedLocalIp + ' -p ' + port + ' -d 1';
+                var downloadCode = document.getElementById('downloadCommand');
+                var sourceCode = document.getElementById('sourceCommand');
+                if (downloadCode) downloadCode.textContent = downloadCmd;
+                if (sourceCode) sourceCode.textContent = sourceCmd;
+            }
+
+            var archSelect = document.getElementById('archSelect');
+            if (archSelect) {
+                archSelect.addEventListener('change', updateWizardCommands);
+            }
+
+            function setupCopy(btnId, codeId, feedbackId) {
+                var btn = document.getElementById(btnId);
+                var code = document.getElementById(codeId);
+                var feedback = document.getElementById(feedbackId);
+                if (!btn || !code) return;
+                btn.addEventListener('click', function () {
+                    var text = code.textContent;
+                    if (!text || text === '请选择一个 IP') return;
+                    navigator.clipboard.writeText(text).then(function () {
+                        if (feedback) {
+                            feedback.textContent = '已复制';
+                            feedback.style.display = 'block';
+                            setTimeout(function () { feedback.style.display = 'none'; }, 2000);
+                        }
+                    }).catch(function () {
+                        if (feedback) {
+                            feedback.textContent = '复制失败';
+                            feedback.style.display = 'block';
+                            setTimeout(function () { feedback.style.display = 'none'; }, 2000);
+                        }
+                    });
+                });
+            }
+            setupCopy('copyDownloadBtn', 'downloadCommand', 'copyDownloadFeedback');
+            setupCopy('copySourceBtn', 'sourceCommand', 'copySourceFeedback');
+
+            // Tab switching
+            document.querySelectorAll('.wizard-tab').forEach(function (tab) {
+                tab.addEventListener('click', function () {
+                    document.querySelectorAll('.wizard-tab').forEach(function (t) { t.classList.remove('active'); });
+                    document.querySelectorAll('.wizard-panel').forEach(function (p) { p.classList.remove('active'); });
+                    tab.classList.add('active');
+                    var panel = document.getElementById('panel-' + tab.dataset.tab);
+                    if (panel) panel.classList.add('active');
+                });
+            });
+
+            // TCP port
             socket.emit('config:get_tcp_port');
             socket.on('config:tcp_port', function (port) {
                 if (tcpPortInput) {
                     tcpPortInput.value = port;
                 }
-                updateClientCommand(port);
                 if (tcpPortStatus) {
                     tcpPortStatus.textContent = '当前 TCP 端口: ' + port;
                 }
+                updateWizardCommands();
             });
 
             var applyTcpPortBtn = document.getElementById("applyTcpPort");
@@ -236,12 +418,63 @@
         <div class="app-status-bar" id="tcpPortStatus">当前 TCP 端口: 28081</div>
     </div>
     <div class="container">
-        <div id="emptyHint" class="empty-hint">
-            <h3>暂无客户端连接 / No clients connected</h3>
-            <p>请先启动 plotop client，将性能数据发送到本服务端：</p>
-            <code id="clientCommand">./plotop -i &lt;server_ip&gt; -p 28081 -d 1</code>
-            <p class="hint-detail">更多用法请参考 README.md</p>
-        </div>
+            <div id="emptyHint" class="empty-hint">
+                <h3>连接你的第一台设备</h3>
+                <div class="wizard-tabs">
+                    <button class="wizard-tab active" data-tab="download">下载二进制</button>
+                    <button class="wizard-tab" data-tab="source">从源码编译</button>
+                    <button class="wizard-tab" data-tab="help">连接帮助</button>
+                </div>
+
+                <div class="wizard-panel active" id="panel-download">
+                    <div class="wizard-section">
+                        <label>你的电脑 IP（选择后填入 -i 参数）</label>
+                        <div class="ip-pills" id="localIps"></div>
+                    </div>
+                    <div class="wizard-section">
+                        <label>目标设备架构</label>
+                        <select id="archSelect" class="app-select">
+                            <option value="x86_64">x86_64</option>
+                            <option value="arm64">arm64 (aarch64)</option>
+                        </select>
+                    </div>
+                    <div class="wizard-section">
+                        <label>部署命令</label>
+                        <div class="command-block">
+                            <code id="downloadCommand">请选择一个 IP</code>
+                            <button id="copyDownloadBtn" class="app-button copy-btn">复制</button>
+                        </div>
+                        <div class="copy-feedback" id="copyDownloadFeedback"></div>
+                    </div>
+                    <p class="hint-detail">或前往 <a href="#" id="releaseLink">GitHub Releases</a> 下载对应架构的 plotop 二进制</p>
+                    <p class="hint-detail">更多用法请参考 <a href="https://github.com/caibingcheng/plotop/blob/master/README.md">README.md</a></p>
+                </div>
+
+                <div class="wizard-panel" id="panel-source">
+                    <div class="wizard-section">
+                        <label>在目标设备上执行以下命令编译并运行：</label>
+                        <div class="command-block">
+                            <code id="sourceCommand">请选择一个 IP</code>
+                            <button id="copySourceBtn" class="app-button copy-btn">复制</button>
+                        </div>
+                        <div class="copy-feedback" id="copySourceFeedback"></div>
+                    </div>
+                    <p class="hint-detail">交叉编译示例：<code>make CROSSCOMPILER=aarch64-linux-gnu-</code></p>
+                </div>
+
+                <div class="wizard-panel" id="panel-help">
+                    <p>确保目标设备能访问本机的以下端口：</p>
+                    <ul>
+                        <li>TCP <span id="helpPort">28081</span> — 数据传输端口</li>
+                    </ul>
+                    <p>常见问题：</p>
+                    <ul>
+                        <li>目标设备是否能 ping 通本机？</li>
+                        <li>防火墙是否放行了 <span id="helpPort2">28081</span> 端口？</li>
+                        <li>Server 的 TCP 端口可在顶部工具栏中修改</li>
+                    </ul>
+                </div>
+            </div>
         <div id="ipList" class="app-list"></div>
     </div>
 </body>

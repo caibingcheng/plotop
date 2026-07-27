@@ -145,6 +145,15 @@ class Packet {
     return jsonify.to_string() + "\n";
   }
 
+  std::string to_hello(const std::string &version, int protocol_version, const std::string &arch) const {
+    Jsonify jsonify;
+    jsonify["type"] = "hello";
+    jsonify["version"] = version;
+    jsonify["protocol_version"] = protocol_version;
+    jsonify["arch"] = arch;
+    return jsonify.to_string() + "\n";
+  }
+
   std::list<ProcessInfo> get_process_list() const;
   bool process_list_changed() const;
 

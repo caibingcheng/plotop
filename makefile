@@ -7,8 +7,13 @@ VERSION := $(shell python3 scripts/get_version.py 2>/dev/null || echo "unknown")
 # Compiler
 CXX := $(CROSSCOMPILER)g++
 
+# Protocol version
+PLOTOP_PROTOCOL_VERSION := 1
+# Target architecture
+PLOTOP_ARCH := $(shell uname -m)
+
 # Compiler flags
-CXXFLAGS := -std=c++17 -Wall -DPLOTOP_VERSION=\"$(VERSION)\"
+CXXFLAGS := -std=c++17 -Wall -DPLOTOP_VERSION=\"$(VERSION)\" -DPLOTOP_PROTOCOL_VERSION=$(PLOTOP_PROTOCOL_VERSION) -DPLOTOP_ARCH=\"$(PLOTOP_ARCH)\"
 
 # Linker flags
 LDFLAGS := -lstdc++fs -pthread -static-libstdc++ -static-libgcc

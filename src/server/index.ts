@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { startHttpServer } from './http-server';
 import { startTcpServer } from './tcp-server';
+import { getLatestRelease } from './release';
 
 export interface ServerConfig {
   web: boolean;
@@ -33,6 +34,8 @@ export async function startServer(config: ServerConfig): Promise<ServerInfo> {
   const { io, actualPort } = await startHttpServer(httpHost, httpPort, rendererPath);
   const tcpServerManager = startTcpServer(io, tcpPort);
   (global as any).__tcpServerManager = tcpServerManager;
+
+  getLatestRelease().catch(() => {});
 
   return { host: httpHost, port: actualPort, tcpPort: tcpServerManager.getPort() };
 }

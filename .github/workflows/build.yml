@@ -32,7 +32,7 @@ jobs:
     - name: Build binary
       run: |
         make clean
-        make CROSSCOMPILER="$CROSSCOMPILER"
+        make CROSSCOMPILER="$CROSSCOMPILER" PLOTOP_ARCH=${{ matrix.arch }}
         mv plotop plotop-${{ matrix.arch }}
 
     - name: Verify version

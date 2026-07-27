@@ -200,6 +200,14 @@ int32_t main(int32_t argc, char **argv) {
     if (network->ready()) {
       retry_ms = 100;
 
+#ifndef PLOTOP_PROTOCOL_VERSION
+#define PLOTOP_PROTOCOL_VERSION 1
+#endif
+#ifndef PLOTOP_ARCH
+#define PLOTOP_ARCH "unknown"
+#endif
+      network->send(packet->to_hello(PLOTOP_VERSION, PLOTOP_PROTOCOL_VERSION, PLOTOP_ARCH));
+
       FilterConfig filter_config;
       std::atomic<bool> stop_flag(false);
       std::atomic<uint64_t> last_server_seen_ms(0);

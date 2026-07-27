@@ -1,5 +1,7 @@
 import { ProcessSelection } from './process-selection';
 
+export type VersionStatus = 'unknown' | 'compatible' | 'outdated' | 'break-change' | 'newer-than-server';
+
 export interface ClientState {
   id: number;
   subscribed: { count: number; lastTime: Date };
@@ -13,6 +15,10 @@ export interface ClientState {
   socket: any;
   hasProcessList: boolean;
   lastProcessList: any;
+  clientVersion?: string;
+  protocolVersion?: number;
+  arch?: string;
+  versionStatus?: VersionStatus;
 }
 
 export const clients = new Map<string, ClientState>();
