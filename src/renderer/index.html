@@ -27,33 +27,18 @@
             color: var(--text-secondary);
         }
 
-        .empty-hint {
-            text-align: center;
-            padding: 48px 20px;
+        .deploy-guide {
+            margin-top: 24px;
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-color);
             color: var(--text-secondary);
         }
 
-        .empty-hint h3 {
-            margin: 0 0 10px 0;
-            font-size: 16px;
+        .deploy-guide h3 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
             color: var(--text-primary);
             font-weight: 600;
-        }
-
-        .empty-hint p {
-            margin: 6px 0;
-        }
-
-        .empty-hint code {
-            display: inline-block;
-            background-color: var(--bg-panel);
-            border: 1px solid var(--border-color);
-            padding: 8px 14px;
-            border-radius: var(--border-radius);
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            color: var(--accent-color);
-            margin: 10px 0;
-            font-size: 13px;
         }
 
         .status-dot {
@@ -82,15 +67,6 @@
             line-height: 1;
         }
 
-        .client-offline-banner {
-            display: none;
-            background-color: #fff3cd;
-            color: #856404;
-            border-bottom: 1px solid #ffeeba;
-            padding: 6px 16px;
-            font-size: 12px;
-            text-align: center;
-        }
     </style>
     <script src="/vendor/socket.io.js"></script>
     <script type="text/javascript">
@@ -104,40 +80,22 @@
 
             var socket = io.connect('/');
             var displayedIps = new Set();
-            var offlineIps = new Set();
             var versionData = {};
             var serverInfo = {};
             var selectedLocalIp = '';
 
-            var offlineBanner = document.getElementById("offlineBanner");
             var tcpPortInput = document.getElementById("tcpPortInput");
             var tcpPortStatus = document.getElementById("tcpPortStatus");
             var ipList = document.getElementById("ipList");
 
-            function updateOfflineBanner() {
-                if (!offlineBanner) return;
-                if (offlineIps.size === 0) {
-                    offlineBanner.style.display = "none";
-                    offlineBanner.textContent = "";
-                } else {
-                    offlineBanner.style.display = "block";
-                    offlineBanner.textContent = "客户端已断开连接 / Client disconnected: " + Array.from(offlineIps).join(", ");
-                }
-            }
-
-            function hideEmptyHint() {
-                var emptyHint = document.getElementById("emptyHint");
-                if (emptyHint) {
-                    emptyHint.style.display = "none";
-                }
-            }
-
             function createIpItem(ip, alive) {
                 var item = document.createElement("div");
-                item.className = "app-list-item";
-                item.onclick = function () {
-                    window.location.href = '/plot?ip=' + encodeURIComponent(ip);
-                };
+                item.className = "app-list-item" + (alive ? "" : " disabled");
+                if (alive) {
+                    item.onclick = function () {
+                        window.location.href = '/plot?ip=' + encodeURIComponent(ip);
+                    };
+                }
 
                 var dot = document.createElement("span");
                 dot.className = "status-dot " + (alive ? "online" : "offline");
@@ -149,7 +107,7 @@
                 var badge = document.createElement("span");
                 badge.className = "version-badge";
                 badge.dataset.ip = ip;
-                badge.innerHTML = '';
+                badge.innerHTML = alive ? '' : '<span class="version-status status-unknown">已断开</span>';
                 item.badgeEl = badge;
 
                 var arrow = document.createElement("span");
@@ -173,6 +131,18 @@
                         var dot = items[i].querySelector(".status-dot");
                         if (dot) {
                             dot.className = "status-dot " + (alive ? "online" : "offline");
+                        }
+                        var badge = items[i].querySelector(".version-badge");
+                        if (alive) {
+                            items[i].classList.remove("disabled");
+                            items[i].onclick = function () {
+                                window.location.href = '/plot?ip=' + encodeURIComponent(ip);
+                            };
+                            updateBadgeForIp(ip, badge);
+                        } else {
+                            items[i].classList.add("disabled");
+                            items[i].onclick = null;
+                            if (badge) badge.innerHTML = '<span class="version-status status-unknown">已断开</span>';
                         }
                         return;
                     }
@@ -199,7 +169,7 @@
                 }
                 html += '<span class="version-status ' + statusClass + '">' + statusText + '</span>';
                 if (vd.status === 'outdated' && vd.latestReleaseUrl) {
-                    html += ' <a class="version-badge-link" href="' + vd.latestReleaseUrl + '" target="_blank">下载新版本</a>';
+                    html += ' <a class="version-badge-link" href="' + vd.latestReleaseUrl + '" target="_blank" onclick="event.stopPropagation()">下载新版本</a>';
                 }
                 if (vd.status === 'break-change') {
                     html += ' <span class="version-badge-link">协议不兼容，请升级 client</span>';
@@ -222,15 +192,8 @@
             }
 
             socket.on('new_ip', function (data) {
-                hideEmptyHint();
                 var ip = data.ip;
                 if (!ip) return;
-                if (data.alive) {
-                    offlineIps.delete(ip);
-                } else {
-                    offlineIps.add(ip);
-                }
-                updateOfflineBanner();
                 if (displayedIps.has(ip)) {
                     updateIpItem(ip, data.alive);
                 } else {
@@ -404,7 +367,6 @@
 </head>
 
 <body>
-    <div id="offlineBanner" class="client-offline-banner"></div>
     <div class="app-toolbar">
         <div class="toolbar-title">
             <span>Plotop Clients</span>
@@ -418,64 +380,64 @@
         <div class="app-status-bar" id="tcpPortStatus">当前 TCP 端口: 28081</div>
     </div>
     <div class="container">
-            <div id="emptyHint" class="empty-hint">
-                <h3>连接你的第一台设备</h3>
-                <div class="wizard-tabs">
-                    <button class="wizard-tab active" data-tab="download">下载二进制</button>
-                    <button class="wizard-tab" data-tab="source">从源码编译</button>
-                    <button class="wizard-tab" data-tab="help">连接帮助</button>
-                </div>
-
-                <div class="wizard-panel active" id="panel-download">
-                    <div class="wizard-section">
-                        <label>你的电脑 IP（选择后填入 -i 参数）</label>
-                        <div class="ip-pills" id="localIps"></div>
-                    </div>
-                    <div class="wizard-section">
-                        <label>目标设备架构</label>
-                        <select id="archSelect" class="app-select">
-                            <option value="x86_64">x86_64</option>
-                            <option value="arm64">arm64 (aarch64)</option>
-                        </select>
-                    </div>
-                    <div class="wizard-section">
-                        <label>部署命令</label>
-                        <div class="command-block">
-                            <code id="downloadCommand">请选择一个 IP</code>
-                            <button id="copyDownloadBtn" class="app-button copy-btn">复制</button>
-                        </div>
-                        <div class="copy-feedback" id="copyDownloadFeedback"></div>
-                    </div>
-                    <p class="hint-detail">或前往 <a href="#" id="releaseLink">GitHub Releases</a> 下载对应架构的 plotop 二进制</p>
-                    <p class="hint-detail">更多用法请参考 <a href="https://github.com/caibingcheng/plotop/blob/master/README.md">README.md</a></p>
-                </div>
-
-                <div class="wizard-panel" id="panel-source">
-                    <div class="wizard-section">
-                        <label>在目标设备上执行以下命令编译并运行：</label>
-                        <div class="command-block">
-                            <code id="sourceCommand">请选择一个 IP</code>
-                            <button id="copySourceBtn" class="app-button copy-btn">复制</button>
-                        </div>
-                        <div class="copy-feedback" id="copySourceFeedback"></div>
-                    </div>
-                    <p class="hint-detail">交叉编译示例：<code>make CROSSCOMPILER=aarch64-linux-gnu-</code></p>
-                </div>
-
-                <div class="wizard-panel" id="panel-help">
-                    <p>确保目标设备能访问本机的以下端口：</p>
-                    <ul>
-                        <li>TCP <span id="helpPort">28081</span> — 数据传输端口</li>
-                    </ul>
-                    <p>常见问题：</p>
-                    <ul>
-                        <li>目标设备是否能 ping 通本机？</li>
-                        <li>防火墙是否放行了 <span id="helpPort2">28081</span> 端口？</li>
-                        <li>Server 的 TCP 端口可在顶部工具栏中修改</li>
-                    </ul>
-                </div>
-            </div>
         <div id="ipList" class="app-list"></div>
+        <div id="deployGuide" class="deploy-guide">
+            <h3>部署客户端</h3>
+            <div class="wizard-tabs">
+                <button class="wizard-tab active" data-tab="download">下载二进制</button>
+                <button class="wizard-tab" data-tab="source">从源码编译</button>
+                <button class="wizard-tab" data-tab="help">连接帮助</button>
+            </div>
+
+            <div class="wizard-panel active" id="panel-download">
+                <div class="wizard-section">
+                    <label>你的电脑 IP（选择后填入 -i 参数）</label>
+                    <div class="ip-pills" id="localIps"></div>
+                </div>
+                <div class="wizard-section">
+                    <label>目标设备架构</label>
+                    <select id="archSelect" class="app-select">
+                        <option value="x86_64">x86_64</option>
+                        <option value="arm64">arm64 (aarch64)</option>
+                    </select>
+                </div>
+                <div class="wizard-section">
+                    <label>部署命令</label>
+                    <div class="command-block">
+                        <code id="downloadCommand">请选择一个 IP</code>
+                        <button id="copyDownloadBtn" class="app-button copy-btn">复制</button>
+                    </div>
+                    <div class="copy-feedback" id="copyDownloadFeedback"></div>
+                </div>
+                <p class="hint-detail">或前往 <a href="#" id="releaseLink">GitHub Releases</a> 下载对应架构的 plotop 二进制</p>
+                <p class="hint-detail">更多用法请参考 <a href="https://github.com/caibingcheng/plotop/blob/master/README.md">README.md</a></p>
+            </div>
+
+            <div class="wizard-panel" id="panel-source">
+                <div class="wizard-section">
+                    <label>在目标设备上执行以下命令编译并运行：</label>
+                    <div class="command-block">
+                        <code id="sourceCommand">请选择一个 IP</code>
+                        <button id="copySourceBtn" class="app-button copy-btn">复制</button>
+                    </div>
+                    <div class="copy-feedback" id="copySourceFeedback"></div>
+                </div>
+                <p class="hint-detail">交叉编译示例：<code>make CROSSCOMPILER=aarch64-linux-gnu-</code></p>
+            </div>
+
+            <div class="wizard-panel" id="panel-help">
+                <p>确保目标设备能访问本机的以下端口：</p>
+                <ul>
+                    <li>TCP <span id="helpPort">28081</span> — 数据传输端口</li>
+                </ul>
+                <p>常见问题：</p>
+                <ul>
+                    <li>目标设备是否能 ping 通本机？</li>
+                    <li>防火墙是否放行了 <span id="helpPort2">28081</span> 端口？</li>
+                    <li>Server 的 TCP 端口可在顶部工具栏中修改</li>
+                </ul>
+            </div>
+        </div>
     </div>
 </body>
 

@@ -233,6 +233,15 @@ body {
   background-color: var(--bg-hover);
 }
 
+.app-list-item.disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.app-list-item.disabled:hover {
+  background-color: transparent;
+}
+
 .app-list-item.active {
   background-color: rgba(42, 122, 226, 0.08);
 }
