@@ -62,7 +62,7 @@ export function getOrCreateClient(ip: string): ClientState {
   if (!client) {
     client = {
       id: ++clientIdCounter,
-      subscribed: { count: 10, lastTime: new Date(0) },
+      subscribed: { count: 0, lastTime: new Date(0) },
       alive: false,
       data: [],
       dataSequence: 0,

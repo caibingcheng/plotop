@@ -163,6 +163,9 @@
 
         .client-offline-banner {
             display: none;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
             background-color: #fff3cd;
             color: #856404;
             border-bottom: 1px solid #ffeeba;
@@ -782,6 +785,7 @@
                 after_clear = true;
                 first_data_received = false;
                 showWaitingOverlay();
+                subscribe();
             });
 
             const metricsInput = document.getElementById("metricsInput");

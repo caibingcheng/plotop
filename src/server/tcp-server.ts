@@ -41,7 +41,7 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       client.lastProcessList = {};
       client.dataSequence = (client.dataSequence || 0) + 1;
       client.data = [];
-      client.subscribed = { count: 10, lastTime: new Date() };
+
 
       if (client.filterSelections && client.filterSelections.length > 0) {
         client.filterPids = resolveSelectionPids(client.filterSelections, client.lastProcessList);
@@ -387,8 +387,6 @@ function handleStatsMessage(
         sequence: client.dataSequence,
         index: dataIndex,
       });
-    } else {
-      console.log(`Client ${ip} not subscribed or timeout`);
     }
   } catch (e) {
     console.error('WebSocket emit error:', e);
