@@ -324,6 +324,7 @@ class Packet::ImplPacket {
         process.pid = pid;
         process.memory = statm.resident * 4;  // resident is in pages
         process.name = name;
+        process.starttime = stat.starttime;
         process.cpu_user = stat.utime;
         process.cpu_system = stat.stime;
         process.threads = get_threads_(pid);

@@ -74,8 +74,9 @@ class Jsonify {
  private:
   bool is_number_(const std::string &value) const {
     try {
-      std::stod(value);
-      return true;
+      size_t pos = 0;
+      std::stod(value, &pos);
+      return pos == value.size();
     } catch (...) {
       return false;
     }

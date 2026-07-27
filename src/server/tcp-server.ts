@@ -2,8 +2,9 @@ import * as net from 'net';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Server as SocketIoServer } from 'socket.io';
-import { clients, getOrCreateClient, ClientState, AsyncMessageQueue } from './store';
+import { clients, getOrCreateClient, ClientState, AsyncMessageQueue, VersionStatus } from './store';
 import { resolveSelectionPids, arraysEqual } from './process-selection';
+import { SERVER_PROTOCOL_VERSION, MIN_CLIENT_PROTOCOL_VERSION, compareVersions, getCachedRelease, getLatestRelease } from './release';
 
 function isIgnorableSocketError(err: any): boolean {
   return err && (err.code === 'EPIPE' || err.code === 'ECONNRESET');
@@ -35,11 +36,12 @@ export function startTcpServer(io: SocketIoServer, preferredPort: number = DEFAU
       client.outbound = new AsyncMessageQueue();
       client.lastSeen = new Date();
       setClientAlive(clientIp, true, io);
+      emitClientInfo(clientIp, io);
       client.hasProcessList = false;
       client.lastProcessList = {};
       client.dataSequence = (client.dataSequence || 0) + 1;
       client.data = [];
-      client.subscribed = { count: 10, lastTime: new Date() };
+
 
       if (client.filterSelections && client.filterSelections.length > 0) {
         client.filterPids = resolveSelectionPids(client.filterSelections, client.lastProcessList);
@@ -158,6 +160,70 @@ function safeClose(socket: net.Socket) {
   }
 }
 
+function computeVersionStatus(client: ClientState): void {
+  if (!client.protocolVersion) {
+    client.versionStatus = 'unknown';
+    return;
+  }
+
+  if (client.protocolVersion < MIN_CLIENT_PROTOCOL_VERSION) {
+    client.versionStatus = 'break-change';
+    return;
+  }
+
+  if (client.protocolVersion > SERVER_PROTOCOL_VERSION) {
+    client.versionStatus = 'newer-than-server';
+    return;
+  }
+
+  client.versionStatus = 'compatible';
+
+  const release = getCachedRelease();
+  if (release && client.clientVersion) {
+    const cmp = compareVersions(client.clientVersion, release.version);
+    if (cmp < 0) {
+      client.versionStatus = 'outdated';
+    }
+  }
+}
+
+function refreshVersionStatus(client: ClientState, ip: string, io: SocketIoServer): void {
+  getLatestRelease().then((latest) => {
+    if (latest && client.clientVersion) {
+      const cmp = compareVersions(client.clientVersion, latest.version);
+      if (cmp < 0) {
+        client.versionStatus = 'outdated';
+      } else if (cmp >= 0 && client.versionStatus === 'outdated') {
+        client.versionStatus = 'compatible';
+      }
+      emitClientInfo(ip, io);
+    }
+  }).catch(() => {});
+}
+
+function emitClientInfo(ip: string, io: SocketIoServer): void {
+  const client = clients.get(ip);
+  if (!client) return;
+  emitClientInfoForIp(client, ip, io);
+}
+
+function emitClientInfoForIp(client: ClientState, ip: string, io: SocketIoServer): void {
+  const info: any = {
+    ip,
+    alive: client.alive,
+    clientVersion: client.clientVersion || null,
+    protocolVersion: client.protocolVersion || null,
+    arch: client.arch || null,
+    versionStatus: client.versionStatus || 'unknown',
+  };
+  const release = getCachedRelease();
+  if (release) {
+    info.latestVersion = release.version;
+    info.latestReleaseUrl = release.url;
+  }
+  io.emit('client_info', info);
+}
+
 function setClientAlive(ip: string, alive: boolean, io: SocketIoServer) {
   const client = clients.get(ip);
   if (client) {
@@ -224,7 +290,6 @@ async function clientReader(
             handleStatsMessage(ip, data, filename, dataIndex, io);
             break;
           case 'heartbeat':
-            // no-op
             break;
           case 'process_list':
             client.hasProcessList = true;
@@ -237,6 +302,14 @@ async function clientReader(
               matched_count: data.matched_count || 0,
               requested_count: client.filterSelections.length,
             });
+            break;
+          case 'hello':
+            client.clientVersion = String(data.version || '');
+            client.protocolVersion = parseInt(data.protocol_version, 10) || 0;
+            client.arch = String(data.arch || '');
+            computeVersionStatus(client);
+            emitClientInfo(ip, io);
+            refreshVersionStatus(client, ip, io);
             break;
           default:
             console.warn(`Unknown message type from ${ip}: ${data.type}`);
@@ -314,8 +387,6 @@ function handleStatsMessage(
         sequence: client.dataSequence,
         index: dataIndex,
       });
-    } else {
-      console.log(`Client ${ip} not subscribed or timeout`);
     }
   } catch (e) {
     console.error('WebSocket emit error:', e);

@@ -1,9 +1,13 @@
 import express, { Express, Request, Response } from 'express';
 import * as http from 'http';
 import * as path from 'path';
+import * as os from 'os';
 import { Server as SocketIoServer } from 'socket.io';
-import { clients } from './store';
+import { clients, VersionStatus } from './store';
 import { ProcessSelection, resolveSelectionPids } from './process-selection';
+import { getLatestRelease, SERVER_PROTOCOL_VERSION, getCachedRelease } from './release';
+
+const pkg = require('../../package.json');
 
 export interface HttpServerInfo {
   httpServer: http.Server;
@@ -39,6 +43,22 @@ export async function startHttpServer(host: string, preferredPort: number, rende
     for (const [ip, client] of clients.entries()) {
       socket.emit('new_ip', { ip, alive: client.alive });
     }
+    for (const [ip, client] of clients.entries()) {
+      const info: any = {
+        ip,
+        alive: client.alive,
+        clientVersion: client.clientVersion || null,
+        protocolVersion: client.protocolVersion || null,
+        arch: client.arch || null,
+        versionStatus: client.versionStatus || 'unknown',
+      };
+      const release = getCachedRelease();
+      if (release) {
+        info.latestVersion = release.version;
+        info.latestReleaseUrl = release.url;
+      }
+      socket.emit('client_info', info);
+    }
 
     socket.on('config:get_tcp_port', () => {
       const tcpServerManager = (global as any).__tcpServerManager;
@@ -52,6 +72,33 @@ export async function startHttpServer(host: string, preferredPort: number, rende
       const tcpServerManager = (global as any).__tcpServerManager;
       if (!tcpServerManager) return;
       tcpServerManager.changePort(requested);
+    });
+
+    socket.on('config:get_server_info', async () => {
+      const networkInterfaces = os.networkInterfaces();
+      const localIps: string[] = [];
+      for (const [, addrs] of Object.entries(networkInterfaces)) {
+        if (!addrs) continue;
+        for (const addr of addrs) {
+          if (addr.family === 'IPv4' && !addr.internal) {
+            localIps.push(addr.address);
+          }
+        }
+      }
+      const tcpServerManager = (global as any).__tcpServerManager;
+      const port = tcpServerManager ? tcpServerManager.getPort() : 28081;
+      const release = await getLatestRelease();
+      const info: any = {
+        version: pkg.version,
+        protocolVersion: SERVER_PROTOCOL_VERSION,
+        tcpPort: port,
+        localIps,
+      };
+      if (release) {
+        info.latestVersion = release.version;
+        info.latestReleaseUrl = release.url;
+      }
+      socket.emit('config:server_info', info);
     });
 
     socket.on('subscribe', (message) => {
