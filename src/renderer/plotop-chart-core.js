@@ -1436,7 +1436,7 @@ function applyColorOverride(label, color) {
                 dataset.borderColor = color;
             }
         });
-        chart.update('none');
+        chart.update();
     }
     updateChartDatasets(system_charts['system_memory']?.chart);
     updateChartDatasets(system_charts['system_cpu']?.chart);
@@ -1461,26 +1461,53 @@ function randomizeColorForLabel(label) {
 
 function randomizeAllColors() {
     if (typeof colorOverrides === 'undefined') return;
+
     const labels = new Set();
-    function collect(chart) {
+    function collectLabels(chart) {
         if (!chart || !chart.data) return;
         chart.data.datasets.forEach(dataset => labels.add(dataset.label));
     }
-    collect(system_charts['system_memory']?.chart);
-    collect(system_charts['system_cpu']?.chart);
-    collect(system_charts['system_cores']?.chart);
+    collectLabels(system_charts['system_memory']?.chart);
+    collectLabels(system_charts['system_cpu']?.chart);
+    collectLabels(system_charts['system_cores']?.chart);
     for (const pid in process_charts) {
         const pc = process_charts[pid];
         if (pc) {
-            collect(pc.memory);
-            collect(pc.cpu);
-            collect(pc.thread_cpu);
+            collectLabels(pc.memory);
+            collectLabels(pc.cpu);
+            collectLabels(pc.thread_cpu);
         }
     }
+
+    const colorMap = {};
     labels.forEach(label => {
-        colorOverrides[label] = getRandomColor();
-        applyColorOverride(label, colorOverrides[label]);
+        const color = getRandomColor();
+        colorOverrides[label] = color;
+        colorMap[label] = color;
     });
+
+    function applyColorMap(chart) {
+        if (!chart || !chart.data) return;
+        chart.data.datasets.forEach(dataset => {
+            const color = colorMap[dataset.label];
+            if (color) {
+                dataset.borderColor = color;
+            }
+        });
+        chart.update();
+    }
+    applyColorMap(system_charts['system_memory']?.chart);
+    applyColorMap(system_charts['system_cpu']?.chart);
+    applyColorMap(system_charts['system_cores']?.chart);
+    for (const pid in process_charts) {
+        const pc = process_charts[pid];
+        if (pc) {
+            applyColorMap(pc.memory);
+            applyColorMap(pc.cpu);
+            applyColorMap(pc.thread_cpu);
+        }
+    }
+
     updateAllStatistics();
     if (typeof saveColorOverridesForIp === 'function') saveColorOverridesForIp();
 }

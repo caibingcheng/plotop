@@ -1349,7 +1349,14 @@
                 randomColorsBtn.addEventListener("click", function () {
                     console.log('randomColorsBtn clicked');
                     if (typeof randomizeAllColors === 'function') {
-                        randomizeAllColors();
+                        randomColorsBtn.disabled = true;
+                        randomColorsBtn.textContent = "Randomizing...";
+                        try {
+                            randomizeAllColors();
+                        } finally {
+                            randomColorsBtn.disabled = false;
+                            randomColorsBtn.textContent = "Random Colors";
+                        }
                     }
                 });
             }
