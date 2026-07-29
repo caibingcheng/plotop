@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Server as SocketIoServer } from 'socket.io';
 import { clients, getOrCreateClient, ClientState, AsyncMessageQueue, VersionStatus } from './store';
-import { resolveSelectionPids, arraysEqual } from './process-selection';
+import { resolveSelectionPids, arraysEqual, isSelectionLive } from './process-selection';
 import { SERVER_PROTOCOL_VERSION, MIN_CLIENT_PROTOCOL_VERSION, compareVersions, getCachedRelease, getLatestRelease } from './release';
 
 function isIgnorableSocketError(err: any): boolean {
@@ -301,6 +301,7 @@ async function clientReader(
             io.emit(`filter_status/${ip}`, {
               matched_count: data.matched_count || 0,
               requested_count: client.filterSelections.length,
+              live_count: client.filterSelections.filter((s) => isSelectionLive(s, client.lastProcessList)).length,
             });
             break;
           case 'hello':
