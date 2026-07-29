@@ -37,6 +37,22 @@
         .stale-process {
             color: var(--danger-color);
             font-style: italic;
+            background-color: rgba(220, 53, 69, 0.06);
+            border-left: 3px solid var(--danger-color);
+        }
+
+        .process-status-badge {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-style: normal;
+            white-space: nowrap;
+        }
+
+        .process-status-badge.exited {
+            background-color: var(--danger-color);
+            color: #fff;
         }
 
         .lock-controls {
@@ -962,8 +978,10 @@
             function resolveCurrentPid(selection, processList) {
                 if (!processList || !Array.isArray(processList)) return null;
                 switch (selection.mode) {
-                    case 'pid':
-                        return selection.pid;
+                    case 'pid': {
+                        const exists = processList.some(p => p && p.pid === selection.pid);
+                        return exists ? selection.pid : null;
+                    }
                     case 'name': {
                         const byName = processList.filter(p => p && p.name === selection.name);
                         if (byName.length === 0) return null;
@@ -1021,9 +1039,16 @@
                 const textSpan = document.createElement('span');
                 textSpan.textContent = selection.pid + ': ' + selection.name;
                 if (!currentPid) {
-                    textSpan.textContent += ' (changed now)';
+                    textSpan.textContent += ' (exited)';
                 }
                 label.appendChild(textSpan);
+
+                const badge = document.createElement('span');
+                if (!currentPid) {
+                    badge.className = 'process-status-badge exited';
+                    badge.textContent = 'Exited';
+                }
+                label.appendChild(badge);
                 li.appendChild(label);
 
                 const controls = document.createElement('span');
@@ -1182,17 +1207,21 @@
 
                 let text = '';
                 if (lastFilterStatus) {
-                    if (lastFilterStatus.matched_count > 0) {
-                        text = 'Filter applied: ' + lastFilterStatus.matched_count + ' of ' + lastFilterStatus.requested_count + ' selected processes currently running.';
+                    const liveCount = lastFilterStatus.live_count !== undefined ? lastFilterStatus.live_count : (lastFilterStatus.requested_count - staleCount);
+                    if (liveCount > 0) {
+                        text = 'Filter applied: ' + liveCount + ' of ' + lastFilterStatus.requested_count + ' selections are live.';
                     } else {
-                        text = 'Filter applied, but none of the selected processes are currently running.';
+                        text = 'Filter applied, but none of the selections are currently running.';
                     }
                 } else if (pendingProcessSelections.size > 0) {
                     text = pendingProcessSelections.size + ' process(es) selected.';
                 }
 
                 if (staleCount > 0) {
-                    text += (text ? ' ' : '') + staleCount + ' selected process' + (staleCount > 1 ? 'es are' : ' is') + ' changed now.';
+                    text += (text ? ' ' : '') + staleCount + ' selected process' + (staleCount > 1 ? 'es' : '') + ' exited.';
+                    filterStatus.style.color = 'var(--danger-color)';
+                } else {
+                    filterStatus.style.color = '';
                 }
 
                 if (!text) {
@@ -1249,7 +1278,12 @@
             if (applyFilterBtn) {
                 applyFilterBtn.addEventListener('click', function () {
                     const invalidNameLocks = [];
+                    const exitedSelections = [];
                     for (const sel of pendingProcessSelections.values()) {
+                        const currentPid = resolveCurrentPid(sel, allProcesses);
+                        if (!currentPid) {
+                            exitedSelections.push(sel);
+                        }
                         if (sel.mode === 'name') {
                             const matches = allProcesses.filter(p => p && p.name === sel.name);
                             if (matches.length === 0) {
@@ -1267,6 +1301,12 @@
                         const details = invalidNameLocks.map(x => x.name + '(' + (x.count === 0 ? 'not found' : x.count + ' matches') + ')').join(', ');
                         alert('Name lock requires exactly one match: ' + details);
                         return;
+                    }
+                    if (exitedSelections.length > 0) {
+                        const details = exitedSelections.map(s => s.pid + ':' + s.name + ' (' + s.mode + ')').join('\n');
+                        if (!confirm('The following selections are currently exited:\n' + details + '\n\nStill apply?')) {
+                            return;
+                        }
                     }
 
                     appliedProcessSelections = new Map(pendingProcessSelections);

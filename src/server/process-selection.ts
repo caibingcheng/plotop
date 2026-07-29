@@ -88,6 +88,26 @@ export function validateNameLock(
   return { valid: false, message: `Name "${selection.name}" matches ${matches.length} processes` };
 }
 
+export function isSelectionLive(
+  selection: ProcessSelection,
+  processList: ProcessListData | null | undefined
+): boolean {
+  if (!processList || !Array.isArray(processList.processes)) return false;
+  switch (selection.mode) {
+    case 'pid':
+      return processList.processes.some((p) => p && p.pid === selection.pid);
+    case 'name': {
+      const matches = processList.processes.filter((p) => p && p.name === selection.name);
+      if (matches.length === 0) return false;
+      if (matches.length === 1) return true;
+      return selection.pid ? matches.some((p) => p.pid === selection.pid) : false;
+    }
+    case 'pid+name':
+      return processList.processes.some((p) => p && p.pid === selection.pid && p.name === selection.name);
+  }
+  return false;
+}
+
 export function arraysEqual(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
