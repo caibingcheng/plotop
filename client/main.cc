@@ -11,6 +11,8 @@
 #include "network.h"
 #include "packet.h"
 
+constexpr int64_t MIN_PROCESS_LIST_INTERVAL_MS = 1000;
+
 struct Arguments {
   std::string address;
   int32_t port;
@@ -86,7 +88,8 @@ static std::list<int32_t> extract_json_int_array_(const std::string &json, const
   return values;
 }
 
-static void send_process_list_(Network *network, Packet *packet) {
+static void send_process_list_(Network *network, Packet *packet,
+                               std::atomic<int64_t> *last_send_ms) {
   const auto processes = packet->get_process_list();
   std::list<std::pair<int32_t, std::string>> process_pairs;
   for (const auto &process : processes) {
@@ -94,11 +97,16 @@ static void send_process_list_(Network *network, Packet *packet) {
   }
   network->send(packet->to_process_list(process_pairs));
   packet->process_list_changed();
+  const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count();
+  last_send_ms->store(static_cast<int64_t>(now_ms));
 }
 
 static void receiver_thread_(Network *network, Packet *packet, FilterConfig *filter_config,
                              std::atomic<bool> *stop_flag,
-                             std::atomic<uint64_t> *last_server_seen_ms) {
+                             std::atomic<uint64_t> *last_server_seen_ms,
+                             std::atomic<int64_t> *last_process_list_send_ms) {
   while (!stop_flag->load()) {
     try {
       const std::string message = network->recv();
@@ -138,7 +146,7 @@ static void receiver_thread_(Network *network, Packet *packet, FilterConfig *fil
         Log::debug("Received server heartbeat");
       } else if (type == "request_process_list") {
         Log::info("Received request_process_list, sending current process list");
-        send_process_list_(network, packet);
+        send_process_list_(network, packet, last_process_list_send_ms);
       } else if (type.empty()) {
         Log::warning("Received message without type");
       } else {
@@ -211,14 +219,15 @@ int32_t main(int32_t argc, char **argv) {
       FilterConfig filter_config;
       std::atomic<bool> stop_flag(false);
       std::atomic<uint64_t> last_server_seen_ms(0);
+      std::atomic<int64_t> last_process_list_send_ms(0);
 
       try {
         if (packet->process_list_changed()) {
-          send_process_list_(network.get(), packet.get());
+          send_process_list_(network.get(), packet.get(), &last_process_list_send_ms);
         }
 
         std::thread receiver(receiver_thread_, network.get(), packet.get(), &filter_config, &stop_flag,
-                             &last_server_seen_ms);
+                             &last_server_seen_ms, &last_process_list_send_ms);
         std::thread heartbeat(heartbeat_thread_, network.get(), packet.get(), &stop_flag, &last_server_seen_ms);
 
         Interval interval(args.duration, [&]() {
@@ -228,7 +237,13 @@ int32_t main(int32_t argc, char **argv) {
 
           try {
             if (packet->process_list_changed()) {
-              send_process_list_(network.get(), packet.get());
+              const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
+              const auto last_send = last_process_list_send_ms.load();
+              if (last_send == 0 || now_ms - last_send >= MIN_PROCESS_LIST_INTERVAL_MS) {
+                send_process_list_(network.get(), packet.get(), &last_process_list_send_ms);
+              }
             }
           } catch (const std::exception &e) {
             Log::error("Failed to send process list: ", e.what());

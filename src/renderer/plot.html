@@ -959,14 +959,46 @@
             let allProcesses = [];
             let currentSearchQuery = '';
             let lastFilterStatus = null;
+            let processListFrozen = false;
+            let pendingProcessListUpdate = false;
+            let processListRenderTimer = null;
+            let lastProcessListRenderTime = 0;
+            const PROCESS_LIST_RENDER_MIN_INTERVAL = 300;
+
+            function scheduleProcessListRender(immediate) {
+                if (processListRenderTimer) {
+                    clearTimeout(processListRenderTimer);
+                    processListRenderTimer = null;
+                }
+
+                const now = Date.now();
+                const sinceLastRender = now - lastProcessListRenderTime;
+
+                if (immediate || sinceLastRender >= PROCESS_LIST_RENDER_MIN_INTERVAL) {
+                    renderProcessList();
+                    lastProcessListRenderTime = Date.now();
+                    return;
+                }
+
+                const delay = PROCESS_LIST_RENDER_MIN_INTERVAL - sinceLastRender;
+                processListRenderTimer = setTimeout(function () {
+                    renderProcessList();
+                    lastProcessListRenderTime = Date.now();
+                    processListRenderTimer = null;
+                }, delay);
+            }
 
             socket.on('process_list/' + ip, function (msg) {
                 allProcesses = msg.processes || [];
-                applySearch();
+                if (processListFrozen) {
+                    pendingProcessListUpdate = true;
+                    return;
+                }
+                scheduleProcessListRender(false);
             });
 
             function applySearch() {
-                renderProcessList();
+                scheduleProcessListRender(true);
             }
 
             function getSelectionKey(selection) {
@@ -1098,14 +1130,14 @@
                     const newKey = getSelectionKey(newSelection);
                     pendingProcessSelections.delete(key);
                     pendingProcessSelections.set(newKey, newSelection);
-                    renderProcessList();
+                    scheduleProcessListRender(true);
                 });
                 slider.addEventListener('click', function (e) { e.stopPropagation(); });
                 controls.addEventListener('click', function (e) { e.stopPropagation(); });
 
                 li.addEventListener('click', function () {
                     pendingProcessSelections.delete(key);
-                    renderProcessList();
+                    scheduleProcessListRender(true);
                 });
 
                 return li;
@@ -1135,7 +1167,7 @@
 
                 li.addEventListener('click', function () {
                     addPendingSelection(pid, name);
-                    renderProcessList();
+                    scheduleProcessListRender(true);
                 });
 
                 return li;
@@ -1239,7 +1271,9 @@
 
             function openFilterPanel() {
                 pendingProcessSelections = new Map(appliedProcessSelections);
-                renderProcessList();
+                processListFrozen = true;
+                pendingProcessListUpdate = false;
+                scheduleProcessListRender(true);
                 if (filterPanel) {
                     filterPanel.classList.add('visible');
                 }
@@ -1255,6 +1289,19 @@
                 if (filterPanelOverlay) {
                     filterPanelOverlay.classList.remove('visible');
                 }
+                processListFrozen = false;
+                if (pendingProcessListUpdate) {
+                    pendingProcessListUpdate = false;
+                    scheduleProcessListRender(false);
+                }
+            }
+
+            const refreshProcessListBtn = document.getElementById('refreshProcessListBtn');
+            if (refreshProcessListBtn) {
+                refreshProcessListBtn.addEventListener('click', function () {
+                    pendingProcessListUpdate = false;
+                    scheduleProcessListRender(true);
+                });
             }
 
             if (filterButton) {
@@ -1264,7 +1311,7 @@
             if (cancelFilterBtn) {
                 cancelFilterBtn.addEventListener('click', function () {
                     pendingProcessSelections = new Map(appliedProcessSelections);
-                    renderProcessList();
+                    scheduleProcessListRender(true);
                     closeFilterPanel();
                 });
             }
@@ -1420,8 +1467,11 @@
             <h3>Select Processes</h3>
         </div>
         <div class="app-drawer-top">
-            <input type="text" id="processSearchInput" class="app-input" placeholder="Search pid or name..."
-                style="width: 100%;">
+            <div style="display: flex; gap: 8px;">
+                <input type="text" id="processSearchInput" class="app-input" placeholder="Search pid or name..."
+                    style="flex: 1;">
+                <button id="refreshProcessListBtn" class="app-button" type="button">Refresh</button>
+            </div>
         </div>
         <div class="app-drawer-body">
             <div id="selectedProcessSection" class="process-section">
